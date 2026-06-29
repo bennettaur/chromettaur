@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TabKit</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="popup">
+      <header>
+        <strong>TabKit</strong>
+        <button id="open-options" type="button" class="link">Settings…</button>
+      </header>
+
+      <section class="toggles">
+        <label class="toggle">
+          <input type="checkbox" id="t-autoclose" />
+          <span>Auto-close inactive tabs</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="t-uniqueness" />
+          <span>Tab uniqueness</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="t-autogroup" />
+          <span>Auto-group</span>
+        </label>
+      </section>
+
+      <section class="recent">
+        <div class="recent-header">
+          <h2>Recently auto-closed</h2>
+          <button id="clear-recent" type="button" class="link">Clear</button>
+        </div>
+        <ul id="recent-list"></ul>
+        <p id="recent-empty" class="empty">Nothing closed yet.</p>
+      </section>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

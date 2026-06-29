@@ -1,0 +1,32 @@
+{
+  "name": "tabkit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Arc-like tab-management Chrome extension: auto-close, tab uniqueness, auto-group.",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.270",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "wxt": "^0.19.0"
+  },
+  "packageManager": "pnpm@10.34.4",
+  "engines": {
+    "node": ">=20"
+  }
+}

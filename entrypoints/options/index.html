@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="manifest.open_in_tab" content="true" />
+    <title>TabKit — Settings</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>TabKit</h1>
+        <p class="subtitle">
+          Auto-close inactive tabs · dedupe configured URLs · auto-group by URL
+        </p>
+        <div id="save-status" class="save-status" aria-live="polite"></div>
+      </header>
+
+      <section id="section-autoclose">
+        <h2>Auto-close inactive tabs</h2>
+        <label class="row">
+          <input type="checkbox" id="ac-enabled" />
+          <span>Enable auto-close</span>
+        </label>
+
+        <div class="grid">
+          <label>
+            <span>Idle before close (minutes)</span>
+            <input type="number" id="ac-idle" min="1" step="1" />
+          </label>
+          <label>
+            <span>Sweep interval (minutes, ≥ 0.5)</span>
+            <input type="number" id="ac-sweep" min="0.5" step="0.5" />
+          </label>
+          <label>
+            <span>Minimum tabs to keep open</span>
+            <input type="number" id="ac-min" min="0" step="1" />
+          </label>
+          <label>
+            <span>Action</span>
+            <select id="ac-action">
+              <option value="close">Close (default)</option>
+              <option value="discard">Discard (keep tab, free RAM)</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="row"
+          ><input type="checkbox" id="ac-pinned" /><span
+            >Protect pinned tabs</span
+          ></label
+        >
+        <label class="row"
+          ><input type="checkbox" id="ac-audible" /><span
+            >Protect tabs currently playing audio</span
+          ></label
+        >
+        <label class="row"
+          ><input type="checkbox" id="ac-grouped" /><span
+            >Protect grouped tabs (never close any tab in a group)</span
+          ></label
+        >
+
+        <div class="list-block">
+          <h3>Allowlist (URL match patterns — never close)</h3>
+          <ul id="ac-allowlist" class="pattern-list"></ul>
+          <button type="button" data-action="add-allow">+ Add pattern</button>
+        </div>
+      </section>
+
+      <section id="section-uniqueness">
+        <h2>Tab uniqueness</h2>
+        <label class="row">
+          <input type="checkbox" id="uq-enabled" />
+          <span>Enable tab uniqueness for the rules below</span>
+        </label>
+
+        <div class="list-block">
+          <h3>Rules</h3>
+          <p class="hint">
+            A new tab whose URL matches a rule below is collapsed into the
+            existing matching tab. Two tabs are considered duplicates when they
+            produce the same <em>dedup key</em>, computed from the URL via the
+            rule's <strong>key strategy</strong>:
+          </p>
+          <dl class="strategy-help">
+            <dt><code>exact</code></dt>
+            <dd>
+              Use the full URL (minus fragment) as the key. Two tabs collapse
+              only if their URL and query string match exactly.
+            </dd>
+            <dt><code>ignoreFragment</code></dt>
+            <dd>
+              Strip the <code>#…</code> fragment, keep everything else.
+              Equivalent to <code>exact</code> in this extension — both always
+              strip the fragment.
+            </dd>
+            <dt><code>ignoreQuery</code></dt>
+            <dd>
+              Use only the origin + pathname. Different query strings to the
+              same path collapse together
+              (<code>example.com/x?a=1</code> and <code>example.com/x?a=2</code>
+              → one tab).
+            </dd>
+            <dt><code>regexCapture</code></dt>
+            <dd>
+              Run a regex against the URL (without fragment); use
+              <strong>capture group 1</strong> as the key. Pick this when the
+              "identity" of a page lives in a slice of the URL — e.g. the PR
+              number, the JIRA ticket key. Examples:
+              <ul>
+                <li>
+                  GitHub PR (default):
+                  <code>^https://github\.com/([^/]+/[^/]+/pull/\d+)</code>
+                </li>
+                <li>
+                  JIRA ticket:
+                  <code
+                    >^https://[^/]+\.atlassian\.net/browse/([A-Z][A-Z0-9]+-\d+)</code
+                  >
+                </li>
+              </ul>
+            </dd>
+          </dl>
+          <table id="uq-table" class="rules-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Match pattern</th>
+                <th>Key strategy</th>
+                <th>Key regex</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <button type="button" data-action="add-uq">+ Add rule</button>
+        </div>
+      </section>
+
+      <section id="section-autogroup">
+        <h2>Auto-group</h2>
+        <p class="hint">
+          When a tab navigates to a URL matching a rule below, it is placed
+          into the named group (created if absent). Patterns use Chrome's
+          match-pattern syntax: <code>https://github.com/*</code>,
+          <code>https://*.atlassian.net/*</code>. <code>*</code> in the host
+          matches any subdomain (including the bare apex);
+          <code>*</code> in the path matches any characters except a newline.
+        </p>
+        <label class="row">
+          <input type="checkbox" id="ag-enabled" />
+          <span>Enable auto-grouping</span>
+        </label>
+        <label class="row">
+          <input type="checkbox" id="ag-respect" />
+          <span>Respect user moves (don't regroup tabs you moved manually)</span>
+        </label>
+
+        <div class="list-block">
+          <h3>Rules</h3>
+          <table id="ag-table" class="rules-table">
+            <thead>
+              <tr>
+                <th>Group title</th>
+                <th>Color</th>
+                <th>Match pattern</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <button type="button" data-action="add-ag">+ Add rule</button>
+        </div>
+      </section>
+
+      <section id="section-prstatus">
+        <h2>GitHub PR status grouping</h2>
+        <p class="hint">
+          Periodically asks the GitHub API for the status of each open PR tab
+          (URL matches <code>https://github.com/*/*/pull/*</code>) and places
+          the tab into a colored status group:
+          <code>PR: Draft</code> (grey),
+          <code>PR: Ready</code> (green),
+          <code>PR: Blocked</code> (red),
+          <code>PR: Merged</code> (purple),
+          <code>PR: Closed</code> (pink).
+          A PR is "blocked" when GitHub reports
+          <code>mergeable_state</code> of
+          <code>blocked</code> / <code>dirty</code> / <code>behind</code> /
+          <code>unstable</code> (CI failing, merge conflict, branch behind,
+          required-reviewer holds).
+        </p>
+        <p class="hint">
+          Without a token, the GitHub API allows 60 unauthenticated requests
+          per hour from your IP — enough for a handful of PRs at a 5-minute
+          poll. For more, create a fine-grained PAT with
+          <strong>read-only Pull requests</strong> scope on the repos you
+          review and paste it below. The token is stored locally
+          (<code>chrome.storage.local</code>) and is never synced.
+        </p>
+
+        <label class="row">
+          <input type="checkbox" id="pr-enabled" />
+          <span>Enable PR status grouping</span>
+        </label>
+
+        <div class="grid">
+          <label>
+            <span>Poll interval (minutes, ≥ 0.5)</span>
+            <input type="number" id="pr-poll" min="0.5" step="0.5" />
+          </label>
+          <label>
+            <span>GitHub PAT (optional)</span>
+            <input
+              type="password"
+              id="pr-pat"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="github_pat_…"
+            />
+          </label>
+        </div>
+        <div class="row">
+          <button type="button" id="pr-pat-clear" class="secondary">
+            Clear saved token
+          </button>
+          <span id="pr-pat-status" class="hint" style="margin-left: 8px"></span>
+        </div>
+      </section>
+
+      <footer>
+        <button id="save-btn" type="button">Save settings</button>
+        <button id="reset-btn" type="button" class="secondary">
+          Reset to defaults
+        </button>
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
