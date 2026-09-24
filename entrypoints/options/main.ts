@@ -5,6 +5,10 @@ import {
 } from "../../src/settings";
 import { isValidPattern, isValidRegex } from "../../src/matcher";
 import {
+  parseSettingsImport,
+  serializeSettings,
+} from "../../src/settingsTransfer";
+import {
   clearGithubPat,
   loadGithubPat,
   saveGithubPat,
@@ -327,6 +331,31 @@ async function handleSave(): Promise<void> {
   setTimeout(() => (status.textContent = ""), 1500);
 }
 
+async function handleExport(): Promise<void> {
+  const json = serializeSettings(await loadSettings());
+  const url = URL.createObjectURL(
+    new Blob([json], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `tabkit-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function handleImport(file: File): Promise<void> {
+  try {
+    working = parseSettingsImport(await file.text());
+  } catch (err) {
+    const status = $<HTMLDivElement>("save-status");
+    status.textContent = `Import failed: ${(err as Error).message}`;
+    status.classList.add("error");
+    return;
+  }
+  render();
+  await handleSave();
+}
+
 async function refreshPatStatus(): Promise<void> {
   const stored = await loadGithubPat();
   const label = $<HTMLSpanElement>("pr-pat-status");
@@ -366,6 +395,15 @@ async function bootstrap(): Promise<void> {
   $("reset-btn").addEventListener("click", () => {
     working = structuredClone(DEFAULT_SETTINGS);
     render();
+  });
+
+  $("export-btn").addEventListener("click", handleExport);
+  const importFile = $<HTMLInputElement>("import-file");
+  $("import-btn").addEventListener("click", () => importFile.click());
+  importFile.addEventListener("change", async () => {
+    const file = importFile.files?.[0];
+    importFile.value = "";
+    if (file) await handleImport(file);
   });
 
   $("pr-pat-clear").addEventListener("click", async () => {

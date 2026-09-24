@@ -70,7 +70,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
 };
 
-function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
+export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
   if (!stored) return structuredClone(DEFAULT_SETTINGS);
   return {
     autoClose: { ...DEFAULT_SETTINGS.autoClose, ...stored.autoClose },

@@ -108,6 +108,10 @@ toolbar icon → **Options**. All three features have their own section:
 Match patterns follow Chrome's `<scheme>://<host>/<path>` shape with `*`
 wildcards (e.g. `https://github.com/*/*/pull/*`, `https://*.atlassian.net/*`).
 
+**Export settings** / **Import settings…** in the options footer save and
+load all settings as a JSON file. An import is validated like a manual save
+and saved immediately. The GitHub PAT is never included in an export.
+
 Settings are stored in `chrome.storage.sync` (so they roam with your Chrome
 profile). Runtime bookkeeping (managed tabs, user overrides, recently-closed
 list) lives in `chrome.storage.local`. The optional GitHub PAT is stored only
