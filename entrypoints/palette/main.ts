@@ -1,0 +1,182 @@
+import type { PaletteMode } from "../../src/palette";
+import { loadRepoCandidates, refreshRepoCache } from "../../src/repoCache";
+import { rankRepos, type RepoEntry } from "../../src/repoSearch";
+import {
+  filterTabs,
+  loadTabHistory,
+  orderTabsByHistory,
+} from "../../src/tabHistory";
+
+const MAX_RESULTS = 50;
+
+interface PaletteItem {
+  title: string;
+  detail: string;
+  iconUrl?: string;
+  open: () => Promise<void>;
+}
+
+interface PaletteSource {
+  placeholder: string;
+  emptyText: string;
+  search: (query: string) => PaletteItem[];
+}
+
+let source: PaletteSource | null = null;
+let items: PaletteItem[] = [];
+let selected = 0;
+
+function $<T extends HTMLElement = HTMLElement>(id: string): T {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`Missing #${id}`);
+  return el as T;
+}
+
+function renderResults(): void {
+  const list = $<HTMLUListElement>("palette-results");
+  const empty = $<HTMLParagraphElement>("palette-empty");
+  list.innerHTML = "";
+  empty.hidden = items.length > 0;
+  empty.textContent = source?.emptyText ?? "";
+
+  items.forEach((item, idx) => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option");
+    li.classList.toggle("selected", idx === selected);
+
+    if (item.iconUrl) {
+      const icon = document.createElement("img");
+      icon.src = item.iconUrl;
+      icon.alt = "";
+      icon.addEventListener("error", () => (icon.style.visibility = "hidden"));
+      li.append(icon);
+    }
+
+    const text = document.createElement("div");
+    text.className = "item-text";
+    const title = document.createElement("span");
+    title.className = "item-title";
+    title.textContent = item.title;
+    const detail = document.createElement("span");
+    detail.className = "item-detail";
+    detail.textContent = item.detail;
+    text.append(title, detail);
+    li.append(text);
+
+    li.addEventListener("click", () => void openItem(item));
+    list.append(li);
+  });
+
+  list.children[selected]?.scrollIntoView({ block: "nearest" });
+}
+
+function runSearch(): void {
+  items = source ? source.search($<HTMLInputElement>("palette-query").value) : [];
+  selected = 0;
+  renderResults();
+}
+
+function setSource(next: PaletteSource): void {
+  source = next;
+  $<HTMLInputElement>("palette-query").placeholder = next.placeholder;
+  runSearch();
+}
+
+async function openItem(item: PaletteItem): Promise<void> {
+  await item.open();
+  window.close();
+}
+
+function repoItem(repo: RepoEntry): PaletteItem {
+  const [owner, name] = repo.fullName.split("/");
+  return {
+    title: name,
+    detail: repo.description ? `${owner} · ${repo.description}` : owner,
+    open: async () => {
+      await chrome.tabs.create({ url: `https://github.com/${repo.fullName}` });
+    },
+  };
+}
+
+function tabItem(tab: chrome.tabs.Tab): PaletteItem {
+  return {
+    title: tab.title || tab.url || "(untitled)",
+    detail: tab.url ?? "",
+    iconUrl: tab.favIconUrl,
+    open: async () => {
+      if (tab.id == null) return;
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+    },
+  };
+}
+
+async function buildRepoSource(emptyText: string): Promise<PaletteSource> {
+  const { repos, visitTimes } = await loadRepoCandidates();
+  return {
+    placeholder: "Open a GitHub repo…",
+    emptyText,
+    search: (query) =>
+      rankRepos(repos, query, visitTimes, MAX_RESULTS).map(repoItem),
+  };
+}
+
+async function showRepos(): Promise<void> {
+  const initial = await buildRepoSource("No matching repos.");
+  setSource(initial);
+  if (initial.search("").length > 0) return;
+
+  setSource({ ...initial, emptyText: "Loading repos from GitHub…" });
+  await refreshRepoCache(false);
+  setSource(
+    await buildRepoSource(
+      "No repos found. Check the owners and GitHub token in TabKit settings.",
+    ),
+  );
+}
+
+async function showTabs(): Promise<void> {
+  const [tabs, history, [current]] = await Promise.all([
+    chrome.tabs.query({}),
+    loadTabHistory(),
+    chrome.tabs.query({ active: true, currentWindow: true }),
+  ]);
+  const ordered = orderTabsByHistory(
+    tabs.filter((tab) => tab.id !== current?.id),
+    history,
+  );
+  setSource({
+    placeholder: "Jump to a recent tab…",
+    emptyText: "No matching tabs.",
+    search: (query) =>
+      filterTabs(ordered, query).slice(0, MAX_RESULTS).map(tabItem),
+  });
+}
+
+function handleKeydown(e: KeyboardEvent): void {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (items.length === 0) return;
+    const step = e.key === "ArrowDown" ? 1 : -1;
+    selected = (selected + step + items.length) % items.length;
+    renderResults();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const item = items[selected];
+    if (item) void openItem(item);
+  } else if (e.key === "Escape") {
+    window.close();
+  }
+}
+
+function bootstrap(): void {
+  const input = $<HTMLInputElement>("palette-query");
+  input.addEventListener("input", runSearch);
+  input.addEventListener("keydown", handleKeydown);
+  input.focus();
+
+  const mode = new URLSearchParams(location.search).get("mode") as PaletteMode;
+  void (mode === "repos" ? showRepos() : showTabs());
+}
+
+bootstrap();

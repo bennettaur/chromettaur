@@ -89,8 +89,10 @@ export function parseSettingsImport(text: string): Settings {
   const uniqueness = requireSection(settings, "uniqueness");
   const autoGroup = requireSection(settings, "autoGroup");
   const prStatus = requireSection(settings, "prStatus");
+  const repoSwitcher = requireSection(settings, "repoSwitcher");
 
   requireStringList(autoClose?.allowlist, "autoClose.allowlist");
+  requireStringList(repoSwitcher?.owners, "repoSwitcher.owners");
   requireRuleList(uniqueness?.rules, "uniqueness.rules", [
     "id",
     "name",

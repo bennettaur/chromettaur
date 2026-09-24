@@ -230,6 +230,35 @@
         </div>
       </section>
 
+      <section id="section-reposwitcher">
+        <h2>Keyboard shortcuts</h2>
+        <p class="hint">
+          <strong>Alt+Shift+G</strong> opens the GitHub repo switcher: type part
+          of a repo name, press Enter, and the repo opens in a new tab.
+          <strong>Alt+Shift+H</strong> lists your tabs in the order you last
+          viewed them. Change either shortcut at
+          <code>chrome://extensions/shortcuts</code>.
+        </p>
+        <p class="hint">
+          The repo switcher lists repos from the owners below. Repo lists come
+          from the GitHub API (refreshed daily) plus any of these owners' repos
+          you visit. Private repos need the GitHub PAT above to have read
+          access to them.
+        </p>
+
+        <div class="list-block">
+          <h3>GitHub owners (orgs or users)</h3>
+          <ul id="rs-owners" class="pattern-list"></ul>
+          <button type="button" data-action="add-owner">+ Add owner</button>
+        </div>
+        <div class="row">
+          <button type="button" id="rs-refresh" class="secondary">
+            Refresh repo list now
+          </button>
+          <span id="rs-status" class="hint" style="margin-left: 8px"></span>
+        </div>
+      </section>
+
       <footer>
         <button id="save-btn" type="button">Save settings</button>
         <button id="reset-btn" type="button" class="secondary">

@@ -12,5 +12,15 @@ export default defineConfig({
     action: {
       default_title: "TabKit",
     },
+    commands: {
+      "open-repo-switcher": {
+        suggested_key: { default: "Alt+Shift+G" },
+        description: "Open the GitHub repo switcher",
+      },
+      "open-tab-history": {
+        suggested_key: { default: "Alt+Shift+H" },
+        description: "Show recently viewed tabs",
+      },
+    },
   },
 });

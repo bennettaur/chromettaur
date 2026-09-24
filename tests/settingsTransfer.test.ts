@@ -74,6 +74,12 @@ describe("parseSettingsImport rejects", () => {
     ).toThrow('"autoClose.allowlist" must be a list of strings');
   });
 
+  it("repo switcher owners that aren't strings", () => {
+    expect(() =>
+      parseSettingsImport(exportWith({ repoSwitcher: { owners: [null] } })),
+    ).toThrow('"repoSwitcher.owners" must be a list of strings');
+  });
+
   it("a rule with a non-string match pattern", () => {
     expect(() =>
       parseSettingsImport(

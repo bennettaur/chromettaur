@@ -1,6 +1,6 @@
 # TabKit
 
-A Manifest V3 Chrome extension that adds four Arc-like tab behaviors to Chrome:
+A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
 
 1. **Auto-close inactive tabs** *(opt-in)* — close (or discard) tabs idle past
    a configurable threshold, with protections and a recently-closed restore
@@ -13,6 +13,13 @@ A Manifest V3 Chrome extension that adds four Arc-like tab behaviors to Chrome:
    for the status of each open PR tab and places it into a colored group:
    `PR: Draft` / `Ready` / `Blocked` / `Merged` / `Closed`. Optional PAT to
    raise the API rate limit.
+5. **GitHub repo switcher** — **Alt+Shift+G** opens a search box in the
+   toolbar popup. Type part of a repo name, press Enter, and the repo opens
+   in a new tab. Lists repos from an allowlist of owners (default:
+   `wealthsimple`, `bennettaur`).
+6. **Recent tabs** — **Alt+Shift+H** lists open tabs in the order you last
+   viewed them, across windows. Enter jumps to the selected tab; the tab you
+   were on before the current one is selected by default.
 
 The extension is loaded **unpacked** for personal use; there is no Web Store
 distribution and no content scripts / host permissions / network calls.
@@ -104,6 +111,19 @@ toolbar icon → **Options**. All three features have their own section:
   the dedup key).
 - **Auto-group** — enable/disable, "respect user moves" toggle, edit/remove/add
   rules (group title, color, URL match pattern).
+- **Keyboard shortcuts** — the GitHub owners the repo switcher lists, and a
+  button to refresh the cached repo list.
+
+Both shortcuts can be changed at `chrome://extensions/shortcuts`. Chrome only
+applies a suggested shortcut if nothing else already uses it, so check that
+page if a shortcut does nothing after install.
+
+The repo switcher keeps a cache of each owner's repos from the GitHub API,
+refreshed daily (archived repos are skipped). Repos you visit under an
+allowlisted owner are added too, and recent visits rank higher in results.
+Private repos only show up from the API if the GitHub PAT can read them: a
+fine-grained PAT covers a single owner, so use a classic PAT with `repo`
+scope (SSO-authorized for orgs that need it) to cover several.
 
 Match patterns follow Chrome's `<scheme>://<host>/<path>` shape with `*`
 wildcards (e.g. `https://github.com/*/*/pull/*`, `https://*.atlassian.net/*`).
@@ -119,11 +139,13 @@ in `chrome.storage.local` (never synced).
 
 ### A note on network access
 
-Features 1–3 make no external network calls. **Feature 5 (PR status grouping)
-talks to `https://api.github.com/`** to read PR metadata. It does not require
+Features 1–3 make no external network calls. **PR status grouping and the
+repo switcher talk to `https://api.github.com/`** to read PR metadata and
+repo lists. It does not require
 `host_permissions` (an extension service worker can `fetch()` any origin) and
-does not inject content scripts. Disable Feature 5 in Options if you don't
-want the extension making any outbound traffic.
+does not inject content scripts. Disable PR status grouping and remove every
+repo switcher owner in Options if you don't want the extension making any
+outbound traffic.
 
 ---
 
@@ -188,6 +210,25 @@ These should all pass on Chrome 149 after a fresh build and load.
       (`userOverride` respected, same as Feature 4).
 - [ ] PR URLs never end up in the generic "GitHub" group while PR status is
       enabled.
+
+### GitHub repo switcher
+
+- [ ] Alt+Shift+G opens the popup with a focused search box.
+- [ ] Typing `yarvis` puts `wealthsimple/yarvis` first; Enter opens it in a
+      new tab and closes the popup.
+- [ ] Arrow keys move the selection; Escape closes the popup.
+- [ ] Clicking the toolbar icon afterwards still shows the regular popup.
+- [ ] Visiting a repo under an allowlisted owner that the API didn't return
+      makes it show up in the switcher.
+- [ ] **Refresh repo list now** in Options reports the cached repo count.
+
+### Recent tabs
+
+- [ ] Switch between three tabs (including one in another window), then
+      Alt+Shift+H lists them most recent first, without the current tab.
+- [ ] Enter on the first entry jumps back to the previous tab.
+- [ ] Typing filters by title and URL.
+- [ ] Closed tabs disappear from the list.
 
 ### General / lifecycle
 

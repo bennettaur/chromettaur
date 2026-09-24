@@ -68,6 +68,9 @@ export const DEFAULT_SETTINGS: Settings = {
       closed: "PR: Closed",
     },
   },
+  repoSwitcher: {
+    owners: ["wealthsimple", "bennettaur"],
+  },
 };
 
 export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
@@ -88,6 +91,7 @@ export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settin
         ...stored.prStatus?.groupTitles,
       },
     },
+    repoSwitcher: { ...DEFAULT_SETTINGS.repoSwitcher, ...stored.repoSwitcher },
   };
 }
 

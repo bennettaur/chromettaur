@@ -4,6 +4,7 @@ import {
   saveSettings,
 } from "../../src/settings";
 import { isValidPattern, isValidRegex } from "../../src/matcher";
+import { refreshRepoCache, summarizeRepoCache } from "../../src/repoCache";
 import {
   parseSettingsImport,
   serializeSettings,
@@ -28,6 +29,9 @@ const KEY_STRATEGIES: KeyStrategy[] = [
   "ignoreQuery",
   "regexCapture",
 ];
+
+// GitHub usernames: alphanumerics and single hyphens, no leading hyphen, max 39.
+const GITHUB_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 let working: Settings = structuredClone(DEFAULT_SETTINGS);
 
@@ -68,6 +72,9 @@ function render(): void {
   // PR status
   $<HTMLInputElement>("pr-enabled").checked = working.prStatus.enabled;
   $<HTMLInputElement>("pr-poll").value = String(working.prStatus.pollMinutes);
+
+  // Repo switcher
+  renderOwners();
 }
 
 function renderAllowlist(): void {
@@ -97,6 +104,41 @@ function renderAllowlist(): void {
     remove.addEventListener("click", () => {
       working.autoClose.allowlist.splice(idx, 1);
       renderAllowlist();
+    });
+
+    li.append(input, remove);
+    list.append(li);
+  });
+}
+
+function renderOwners(): void {
+  const list = $<HTMLUListElement>("rs-owners");
+  list.innerHTML = "";
+  working.repoSwitcher.owners.forEach((owner, idx) => {
+    const li = document.createElement("li");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = owner;
+    input.placeholder = "wealthsimple";
+    const markInvalid = (): void => {
+      input.classList.toggle(
+        "invalid",
+        input.value.trim() !== "" && !GITHUB_OWNER_RE.test(input.value.trim()),
+      );
+    };
+    input.addEventListener("input", () => {
+      working.repoSwitcher.owners[idx] = input.value;
+      markInvalid();
+    });
+    markInvalid();
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "row-remove";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      working.repoSwitcher.owners.splice(idx, 1);
+      renderOwners();
     });
 
     li.append(input, remove);
@@ -302,6 +344,12 @@ function validate(): string | null {
   ) {
     return "PR status poll interval must be ≥ 0.5 (Chrome floor).";
   }
+  for (const owner of working.repoSwitcher.owners) {
+    if (owner.trim() === "") continue;
+    if (!GITHUB_OWNER_RE.test(owner.trim())) {
+      return `Invalid GitHub owner: ${owner}`;
+    }
+  }
   return null;
 }
 
@@ -317,6 +365,9 @@ async function handleSave(): Promise<void> {
   working.autoClose.allowlist = working.autoClose.allowlist.filter(
     (p) => p.trim() !== "",
   );
+  working.repoSwitcher.owners = working.repoSwitcher.owners
+    .map((o) => o.trim())
+    .filter((o) => o !== "");
   await saveSettings(working);
 
   const patInput = $<HTMLInputElement>("pr-pat");
@@ -364,6 +415,30 @@ async function refreshPatStatus(): Promise<void> {
     : "No token saved — using unauthenticated GitHub API (60 req/hr).";
 }
 
+async function refreshRepoStatus(): Promise<void> {
+  const { repoCount, oldestFetchAt } = await summarizeRepoCache();
+  $<HTMLSpanElement>("rs-status").textContent =
+    oldestFetchAt === null
+      ? "No repos cached yet."
+      : `${repoCount} repos cached (last refreshed ${new Date(oldestFetchAt).toLocaleString()}).`;
+}
+
+async function handleRepoRefresh(): Promise<void> {
+  const button = $<HTMLButtonElement>("rs-refresh");
+  const status = $<HTMLSpanElement>("rs-status");
+  button.disabled = true;
+  status.textContent = "Refreshing…";
+  try {
+    const { failed } = await refreshRepoCache(true);
+    await refreshRepoStatus();
+    if (failed.length > 0) {
+      status.textContent += ` Failed to fetch: ${failed.join(", ")}.`;
+    }
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function addUniquenessRule(): void {
   const rule: UniquenessRule = {
     id: uid(),
@@ -389,7 +464,7 @@ function addAutoGroupRule(): void {
 async function bootstrap(): Promise<void> {
   working = await loadSettings();
   render();
-  await refreshPatStatus();
+  await Promise.all([refreshPatStatus(), refreshRepoStatus()]);
 
   $("save-btn").addEventListener("click", handleSave);
   $("reset-btn").addEventListener("click", () => {
@@ -397,6 +472,7 @@ async function bootstrap(): Promise<void> {
     render();
   });
 
+  $("rs-refresh").addEventListener("click", handleRepoRefresh);
   $("export-btn").addEventListener("click", handleExport);
   const importFile = $<HTMLInputElement>("import-file");
   $("import-btn").addEventListener("click", () => importFile.click());
@@ -424,6 +500,10 @@ async function bootstrap(): Promise<void> {
           break;
         case "add-ag":
           addAutoGroupRule();
+          break;
+        case "add-owner":
+          working.repoSwitcher.owners.push("");
+          renderOwners();
           break;
       }
     });

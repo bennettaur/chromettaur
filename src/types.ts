@@ -90,11 +90,17 @@ export interface PrStatusSettings {
   groupTitles: Record<Exclude<PrStatus, "unknown">, string>;
 }
 
+export interface RepoSwitcherSettings {
+  /** GitHub orgs/users whose repos the repo switcher lists. */
+  owners: string[];
+}
+
 export interface Settings {
   autoClose: AutoCloseSettings;
   uniqueness: UniquenessSettings;
   autoGroup: AutoGroupSettings;
   prStatus: PrStatusSettings;
+  repoSwitcher: RepoSwitcherSettings;
 }
 
 export interface RecentlyClosedEntry {
