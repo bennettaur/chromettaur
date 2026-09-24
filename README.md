@@ -2,8 +2,9 @@
 
 A Manifest V3 Chrome extension that adds four Arc-like tab behaviors to Chrome:
 
-1. **Auto-close inactive tabs** — close (or discard) tabs idle past a configurable
-   threshold, with protections and a recently-closed restore list.
+1. **Auto-close inactive tabs** *(opt-in)* — close (or discard) tabs idle past
+   a configurable threshold, with protections and a recently-closed restore
+   list.
 2. **Tab uniqueness** — for configured URL patterns (default: GitHub PR pages),
    prevent duplicate tabs by focusing the existing tab and closing the new one.
 3. **Auto-group by URL** — automatically place tabs into named, colored tab
@@ -128,6 +129,8 @@ These should all pass on Chrome 149 after a fresh build and load.
 
 ### Feature 2 — auto-close
 
+- [ ] Disabled by default on a fresh install. Enable it in **Options →
+      Auto-close inactive tabs** or the popup toggle.
 - [ ] Set idle to 1 min, sweep to 0.5 min, min tabs to 2. Open 5 tabs, leave
       them; within ~2 min the inactive ones close down to 2, oldest-first.
 - [ ] The active tab is never closed.

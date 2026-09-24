@@ -29,7 +29,9 @@ export const DEFAULT_AUTOGROUP_RULES: AutoGroupRule[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   autoClose: {
-    enabled: true,
+    // Off until the user opts in, so a fresh install can't close tabs before
+    // idle time, min tabs and the allowlist have been configured.
+    enabled: false,
     idleMinutes: 60,
     sweepIntervalMinutes: 1,
     minTabsOpen: 5,
