@@ -1,5 +1,10 @@
 import { mergeWithDefaults } from "./settings";
-import type { Settings } from "./types";
+import {
+  GROUP_COLORS,
+  KEY_STRATEGIES,
+  type GroupColor,
+  type Settings,
+} from "./types";
 
 const EXPORT_FORMAT = "tabkit-settings";
 const EXPORT_VERSION = 1;
@@ -30,42 +35,80 @@ export function serializeSettings(
   return JSON.stringify(payload, null, 2);
 }
 
-function requireSection(settings: JsonRecord, key: string): JsonRecord | null {
+function readOptionalSection(
+  settings: JsonRecord,
+  key: string,
+): JsonRecord | null {
   const section = settings[key];
   if (section === undefined) return null;
   if (!isRecord(section)) throw new Error(`"${key}" must be an object.`);
   return section;
 }
 
-function requireStringList(list: unknown, path: string): void {
+function assertBooleansIfPresent(
+  section: JsonRecord | null,
+  sectionName: string,
+  fields: string[],
+): void {
+  for (const field of fields) {
+    const value = section?.[field];
+    if (value !== undefined && typeof value !== "boolean") {
+      throw new Error(`"${sectionName}.${field}" must be true or false.`);
+    }
+  }
+}
+
+function assertStringListIfPresent(list: unknown, path: string): void {
   if (list === undefined) return;
   if (!Array.isArray(list) || list.some((v) => typeof v !== "string")) {
     throw new Error(`"${path}" must be a list of strings.`);
   }
 }
 
-function requireRuleList(
+interface RuleShape {
+  requiredStrings: string[];
+  optionalStrings?: string[];
+  allowedValues?: Record<string, readonly string[]>;
+}
+
+function assertRuleListIfPresent(
   list: unknown,
   path: string,
-  stringFields: string[],
+  shape: RuleShape,
 ): void {
   if (list === undefined) return;
   if (!Array.isArray(list)) throw new Error(`"${path}" must be a list.`);
   for (const rule of list) {
     const ok =
       isRecord(rule) &&
-      stringFields.every(
-        (field) => rule[field] === undefined || typeof rule[field] === "string",
+      shape.requiredStrings.every((f) => typeof rule[f] === "string") &&
+      (shape.optionalStrings ?? []).every(
+        (f) => rule[f] === undefined || typeof rule[f] === "string",
+      ) &&
+      Object.entries(shape.allowedValues ?? {}).every(([f, allowed]) =>
+        allowed.includes(rule[f] as string),
       );
     if (!ok) throw new Error(`"${path}" contains an invalid rule.`);
   }
 }
 
+function assertRecordOfIfPresent(
+  value: unknown,
+  path: string,
+  allowed: (v: unknown) => boolean,
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value) || !Object.values(value).every(allowed)) {
+    throw new Error(`"${path}" has an invalid value.`);
+  }
+}
+
 /**
  * Parse a file produced by `serializeSettings`. Throws an Error with a
- * user-facing message when the file isn't a TabKit export or a field has the
- * wrong type. Missing fields are filled from defaults; field values (patterns,
- * intervals) are left for the options page's validation.
+ * user-facing message when the file isn't a TabKit export, or when a section,
+ * list, rule, flag or choice has the wrong shape. Missing fields are filled
+ * from defaults. Numbers and patterns are checked when the options page saves
+ * the import.
  */
 export function parseSettingsImport(text: string): Settings {
   let parsed: unknown;
@@ -85,33 +128,49 @@ export function parseSettingsImport(text: string): Settings {
   }
 
   const settings = parsed.settings;
-  const autoClose = requireSection(settings, "autoClose");
-  const uniqueness = requireSection(settings, "uniqueness");
-  const autoGroup = requireSection(settings, "autoGroup");
-  const prStatus = requireSection(settings, "prStatus");
-  const repoSwitcher = requireSection(settings, "repoSwitcher");
+  const autoClose = readOptionalSection(settings, "autoClose");
+  const uniqueness = readOptionalSection(settings, "uniqueness");
+  const autoGroup = readOptionalSection(settings, "autoGroup");
+  const prStatus = readOptionalSection(settings, "prStatus");
+  const repoSwitcher = readOptionalSection(settings, "repoSwitcher");
 
-  requireStringList(autoClose?.allowlist, "autoClose.allowlist");
-  requireStringList(repoSwitcher?.owners, "repoSwitcher.owners");
-  requireRuleList(uniqueness?.rules, "uniqueness.rules", [
-    "id",
-    "name",
-    "matchPattern",
-    "keyStrategy",
-    "keyRegex",
+  assertBooleansIfPresent(autoClose, "autoClose", [
+    "enabled",
+    "protectPinned",
+    "protectAudible",
+    "protectGrouped",
   ]);
-  requireRuleList(autoGroup?.rules, "autoGroup.rules", [
-    "id",
-    "name",
-    "color",
-    "matchPattern",
+  assertBooleansIfPresent(uniqueness, "uniqueness", ["enabled"]);
+  assertBooleansIfPresent(autoGroup, "autoGroup", [
+    "enabled",
+    "respectUserOverride",
   ]);
-  if (prStatus?.groupColors !== undefined && !isRecord(prStatus.groupColors)) {
-    throw new Error(`"prStatus.groupColors" must be an object.`);
+  assertBooleansIfPresent(prStatus, "prStatus", ["enabled"]);
+
+  const action = autoClose?.action;
+  if (action !== undefined && action !== "close" && action !== "discard") {
+    throw new Error(`"autoClose.action" must be "close" or "discard".`);
   }
-  if (prStatus?.groupTitles !== undefined && !isRecord(prStatus.groupTitles)) {
-    throw new Error(`"prStatus.groupTitles" must be an object.`);
-  }
+
+  assertStringListIfPresent(autoClose?.allowlist, "autoClose.allowlist");
+  assertStringListIfPresent(repoSwitcher?.owners, "repoSwitcher.owners");
+  assertRuleListIfPresent(uniqueness?.rules, "uniqueness.rules", {
+    requiredStrings: ["id", "name", "matchPattern", "keyStrategy"],
+    optionalStrings: ["keyRegex"],
+    allowedValues: { keyStrategy: KEY_STRATEGIES },
+  });
+  assertRuleListIfPresent(autoGroup?.rules, "autoGroup.rules", {
+    requiredStrings: ["id", "name", "matchPattern", "color"],
+    allowedValues: { color: GROUP_COLORS },
+  });
+  assertRecordOfIfPresent(prStatus?.groupColors, "prStatus.groupColors", (v) =>
+    GROUP_COLORS.includes(v as GroupColor),
+  );
+  assertRecordOfIfPresent(
+    prStatus?.groupTitles,
+    "prStatus.groupTitles",
+    (v) => typeof v === "string",
+  );
 
   return mergeWithDefaults(settings as Partial<Settings>);
 }

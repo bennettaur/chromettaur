@@ -31,18 +31,19 @@ function isSubsequence(query: string, text: string): boolean {
   return false;
 }
 
-function isWordPrefix(query: string, name: string): boolean {
+// Skips the first word: a match there is already a NamePrefix.
+function isLaterWordPrefix(query: string, name: string): boolean {
   return name
     .split(/[-_.]/)
     .some((word, idx) => idx > 0 && word.startsWith(query));
 }
 
-function matchTier(query: string, fullName: string): MatchTier | null {
+function findMatchTier(query: string, fullName: string): MatchTier | null {
   const full = fullName.toLowerCase();
   const name = repoName(full);
   if (name === query) return MatchTier.ExactName;
   if (name.startsWith(query)) return MatchTier.NamePrefix;
-  if (isWordPrefix(query, name)) return MatchTier.NameWordPrefix;
+  if (isLaterWordPrefix(query, name)) return MatchTier.NameWordPrefix;
   if (name.includes(query)) return MatchTier.NameSubstring;
   if (full.includes(query)) return MatchTier.FullNameSubstring;
   if (isSubsequence(query, name)) return MatchTier.NameFuzzy;
@@ -50,8 +51,8 @@ function matchTier(query: string, fullName: string): MatchTier | null {
 }
 
 /**
- * Filter and order repos for the switcher. Matches are grouped by how well
- * the query fits the repo name (exact, prefix, ... fuzzy). Within a group,
+ * Filter and order repos for the switcher. Matches are grouped by
+ * `MatchTier`, from exact name match down to fuzzy. Within a tier,
  * recently visited repos come first, then shorter names, then alphabetical.
  * An empty query lists recently visited repos first.
  */
@@ -62,19 +63,22 @@ export function rankRepos(
   limit: number,
 ): RepoEntry[] {
   const q = query.trim().toLowerCase();
-  const scored: { repo: RepoEntry; tier: number; visited: number }[] = [];
+  const scored: { repo: RepoEntry; tier: MatchTier; lastVisited: number }[] =
+    [];
 
   for (const repo of repos) {
-    const tier = q === "" ? 0 : matchTier(q, repo.fullName);
+    // Every repo ties on an empty query, so recency decides the order.
+    const tier =
+      q === "" ? MatchTier.ExactName : findMatchTier(q, repo.fullName);
     if (tier === null) continue;
-    const visited = visitTimes[repo.fullName.toLowerCase()] ?? 0;
-    scored.push({ repo, tier, visited });
+    const lastVisited = visitTimes[repo.fullName.toLowerCase()] ?? 0;
+    scored.push({ repo, tier, lastVisited });
   }
 
   scored.sort(
     (a, b) =>
       a.tier - b.tier ||
-      b.visited - a.visited ||
+      b.lastVisited - a.lastVisited ||
       repoName(a.repo.fullName).length - repoName(b.repo.fullName).length ||
       a.repo.fullName.localeCompare(b.repo.fullName),
   );

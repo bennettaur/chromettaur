@@ -4,6 +4,13 @@ export type KeyStrategy =
   | "ignoreQuery"
   | "regexCapture";
 
+export const KEY_STRATEGIES: KeyStrategy[] = [
+  "exact",
+  "ignoreFragment",
+  "ignoreQuery",
+  "regexCapture",
+];
+
 export interface UniquenessRule {
   id: string;
   name: string;

@@ -12,10 +12,10 @@ import {
   runPrStatusSweep,
 } from "../src/prstatus";
 import {
+  ensureRepoCacheAlarm,
   recordRepoVisit,
   refreshRepoCache,
   REPO_CACHE_ALARM,
-  REPO_CACHE_REFRESH_MINUTES,
 } from "../src/repoCache";
 import { loadSettings } from "../src/settings";
 import { clearTabFromState, pruneStaleTabIds } from "../src/state";
@@ -43,11 +43,7 @@ async function initAlarms(): Promise<void> {
   } else {
     await clearPrStatusAlarm();
   }
-  if (!(await chrome.alarms.get(REPO_CACHE_ALARM))) {
-    chrome.alarms.create(REPO_CACHE_ALARM, {
-      periodInMinutes: REPO_CACHE_REFRESH_MINUTES,
-    });
-  }
+  await ensureRepoCacheAlarm();
 }
 
 async function pruneStaleState(): Promise<void> {
@@ -61,18 +57,19 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
     void initAlarms();
     void pruneStaleState();
-    void refreshRepoCache(false);
+    void refreshRepoCache();
   });
 
   chrome.runtime.onStartup.addListener(() => {
     void initAlarms();
     void pruneStaleState();
-    void refreshRepoCache(false);
+    void refreshRepoCache();
   });
 
   chrome.commands.onCommand.addListener((command) => {
     const mode = PALETTE_COMMANDS[command];
-    if (mode) void openPalette(mode);
+    // Fails when no normal window is focused or a popup is already open.
+    if (mode) openPalette(mode).catch(() => {});
   });
 
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -81,21 +78,23 @@ export default defineBackground(() => {
     } else if (alarm.name === PR_STATUS_ALARM) {
       void runPrStatusSweep();
     } else if (alarm.name === REPO_CACHE_ALARM) {
-      void refreshRepoCache(true);
+      void refreshRepoCache({ force: true });
     }
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync" || !changes.settings) return;
     void initAlarms();
-    // Fetches only owners that were just added to the allowlist.
-    void refreshRepoCache(false);
+    // Fetches newly added owners and drops removed ones.
+    void refreshRepoCache();
   });
 
   chrome.tabs.onActivated.addListener(({ tabId }) => {
     void recordTabViewed(tabId);
   });
 
+  // tabs.onActivated doesn't fire on a window switch, since each window's
+  // active tab stays the same.
   chrome.windows.onFocusChanged.addListener(
     (windowId) => {
       if (windowId === chrome.windows.WINDOW_ID_NONE) return;
@@ -151,7 +150,7 @@ async function processTabNavigation(
   if (!tab.url) tab = { ...cachedTab, ...tab };
   if (!tab.url || isRestrictedUrl(tab.url)) return;
 
-  void recordRepoVisit(tab.url);
+  if (!tab.incognito) void recordRepoVisit(tab.url);
 
   const closedAsDup = await handleUniqueness(tab);
   if (closedAsDup) return;

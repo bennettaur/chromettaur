@@ -3,6 +3,7 @@ import {
   extractRepoFullName,
   fetchOwnerRepos,
   GithubRequestError,
+  isValidGithubOwner,
   parseNextLink,
 } from "../src/repoCache";
 
@@ -42,6 +43,27 @@ describe("extractRepoFullName", () => {
   });
 });
 
+describe("isValidGithubOwner", () => {
+  it.each(["wealthsimple", "bennettaur", "a-b", "A1", "x".repeat(39)])(
+    "accepts %s",
+    (owner) => {
+      expect(isValidGithubOwner(owner)).toBe(true);
+    },
+  );
+
+  it.each([
+    "-lead",
+    "trail-",
+    "dou--ble",
+    "dot.ted",
+    "under_score",
+    "x".repeat(40),
+    "",
+  ])("rejects %s", (owner) => {
+    expect(isValidGithubOwner(owner)).toBe(false);
+  });
+});
+
 describe("parseNextLink", () => {
   it("returns the next URL", () => {
     const header =
@@ -51,7 +73,9 @@ describe("parseNextLink", () => {
   });
 
   it("returns null without a next link", () => {
-    expect(parseNextLink('<https://api.github.com/x?page=1>; rel="prev"')).toBeNull();
+    expect(
+      parseNextLink('<https://api.github.com/x?page=1>; rel="prev"'),
+    ).toBeNull();
     expect(parseNextLink(null)).toBeNull();
   });
 });
@@ -66,7 +90,10 @@ describe("fetchOwnerRepos", () => {
         }),
       )
       .mockResolvedValueOnce(
-        jsonResponse([apiRepo("org/b"), apiRepo("org/old", { archived: true })]),
+        jsonResponse([
+          apiRepo("org/b"),
+          apiRepo("org/old", { archived: true }),
+        ]),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -95,7 +122,9 @@ describe("fetchOwnerRepos", () => {
   });
 
   it("uses /user/repos with the PAT when the owner is the token's account", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([apiRepo("Me/x")]));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse([apiRepo("Me/x")]));
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchOwnerRepos("me", "token", "Me");
@@ -105,14 +134,27 @@ describe("fetchOwnerRepos", () => {
     expect(init.headers.Authorization).toBe("Bearer token");
   });
 
+  it("stops paging at a next link that leaves the GitHub API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse([apiRepo("org/a")], {
+        link: '<https://evil.example/steal>; rel="next"',
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchOwnerRepos("org", "token", null);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("throws on errors other than a missing org", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse({}, { status: 403 })),
     );
 
-    await expect(fetchOwnerRepos("org", undefined, null)).rejects.toBeInstanceOf(
-      GithubRequestError,
-    );
+    await expect(
+      fetchOwnerRepos("org", undefined, null),
+    ).rejects.toBeInstanceOf(GithubRequestError);
   });
 });

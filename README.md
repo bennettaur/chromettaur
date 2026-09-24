@@ -22,7 +22,8 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
    were on before the current one is selected by default.
 
 The extension is loaded **unpacked** for personal use; there is no Web Store
-distribution and no content scripts / host permissions / network calls.
+distribution, no content scripts, and no host permissions. PR status grouping
+and the repo switcher call the GitHub API (see *A note on network access*).
 
 ---
 
@@ -57,7 +58,7 @@ From the project root:
 
 ```bash
 pnpm install              # one-time
-pnpm test                 # runs matcher.ts unit tests (Vitest)
+pnpm test                 # runs unit tests (Vitest)
 pnpm build                # production build → dist/chrome-mv3
 ```
 
@@ -101,7 +102,7 @@ refresh / reload icon on the TabKit card to pick up the new build.
 ## Configuration
 
 Open the options page from the popup → **Settings…**, or right-click the
-toolbar icon → **Options**. All three features have their own section:
+toolbar icon → **Options**. Each feature has its own section:
 
 - **Auto-close** — idle minutes, sweep interval, min tabs to keep open,
   close-vs-discard, per-protection toggles, allowlist patterns.
@@ -111,6 +112,8 @@ toolbar icon → **Options**. All three features have their own section:
   the dedup key).
 - **Auto-group** — enable/disable, "respect user moves" toggle, edit/remove/add
   rules (group title, color, URL match pattern).
+- **GitHub PR status grouping** — enable/disable, poll interval, optional
+  GitHub PAT (also used by the repo switcher).
 - **Keyboard shortcuts** — the GitHub owners the repo switcher lists, and a
   button to refresh the cached repo list.
 
@@ -134,18 +137,23 @@ and saved immediately. The GitHub PAT is never included in an export.
 
 Settings are stored in `chrome.storage.sync` (so they roam with your Chrome
 profile). Runtime bookkeeping (managed tabs, user overrides, recently-closed
-list) lives in `chrome.storage.local`. The optional GitHub PAT is stored only
+list), the repo switcher's cached repo lists, and up to 500 recently visited
+repos under allowlisted owners live in `chrome.storage.local`. Incognito
+visits are not recorded. Recent-tab order lives in `chrome.storage.session`,
+which Chrome clears on restart, so right after a restart the order falls back
+to Chrome's own last-accessed times. The optional GitHub PAT is stored only
 in `chrome.storage.local` (never synced).
 
 ### A note on network access
 
-Features 1–3 make no external network calls. **PR status grouping and the
-repo switcher talk to `https://api.github.com/`** to read PR metadata and
-repo lists. It does not require
-`host_permissions` (an extension service worker can `fetch()` any origin) and
-does not inject content scripts. Disable PR status grouping and remove every
-repo switcher owner in Options if you don't want the extension making any
-outbound traffic.
+Features 1–3 and recent tabs make no external network calls. **PR status
+grouping and the repo switcher talk to `https://api.github.com/`** to read PR
+metadata and repo lists. PR status grouping is opt-in; the repo switcher
+fetches its default owners as soon as the extension is installed. Neither
+needs `host_permissions` (an extension service worker can `fetch()` any
+origin) or content scripts. Disable PR status grouping and remove every repo
+switcher owner in Options if you don't want the extension making any outbound
+traffic.
 
 ---
 
@@ -237,7 +245,7 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] Stale `managed`/`userOverride` entries are pruned after a browser
       restart.
 - [ ] No errors in the service worker console during normal use.
-- [ ] `matcher.ts` unit tests pass (`pnpm test`).
+- [ ] Unit tests pass (`pnpm test`).
 
 ---
 

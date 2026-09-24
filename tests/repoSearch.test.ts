@@ -107,7 +107,9 @@ describe("rankRepos", () => {
     expect(rankRepos(repos("a/zzz"), "llm", {}, 10)).toEqual([]);
   });
 
-  it("caps results at the limit", () => {
-    expect(rankRepos(repos("a/x1", "a/x2", "a/x3"), "x", {}, 2)).toHaveLength(2);
+  it("keeps the best-ranked repos when capping at the limit", () => {
+    const result = rankRepos(repos("a/zx", "a/xy", "a/x"), "x", {}, 2);
+
+    expect(names(result)).toEqual(["a/x", "a/xy"]);
   });
 });

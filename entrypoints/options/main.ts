@@ -4,7 +4,11 @@ import {
   saveSettings,
 } from "../../src/settings";
 import { isValidPattern, isValidRegex } from "../../src/matcher";
-import { refreshRepoCache, summarizeRepoCache } from "../../src/repoCache";
+import {
+  isValidGithubOwner,
+  refreshRepoCache,
+  summarizeRepoCache,
+} from "../../src/repoCache";
 import {
   parseSettingsImport,
   serializeSettings,
@@ -16,22 +20,13 @@ import {
 } from "../../src/githubPat";
 import {
   GROUP_COLORS,
+  KEY_STRATEGIES,
   type AutoGroupRule,
   type GroupColor,
   type KeyStrategy,
   type Settings,
   type UniquenessRule,
 } from "../../src/types";
-
-const KEY_STRATEGIES: KeyStrategy[] = [
-  "exact",
-  "ignoreFragment",
-  "ignoreQuery",
-  "regexCapture",
-];
-
-// GitHub usernames: alphanumerics and single hyphens, no leading hyphen, max 39.
-const GITHUB_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 let working: Settings = structuredClone(DEFAULT_SETTINGS);
 
@@ -120,17 +115,17 @@ function renderOwners(): void {
     input.type = "text";
     input.value = owner;
     input.placeholder = "wealthsimple";
-    const markInvalid = (): void => {
+    const updateValidity = (): void => {
       input.classList.toggle(
         "invalid",
-        input.value.trim() !== "" && !GITHUB_OWNER_RE.test(input.value.trim()),
+        input.value.trim() !== "" && !isValidGithubOwner(input.value),
       );
     };
     input.addEventListener("input", () => {
       working.repoSwitcher.owners[idx] = input.value;
-      markInvalid();
+      updateValidity();
     });
-    markInvalid();
+    updateValidity();
 
     const remove = document.createElement("button");
     remove.type = "button";
@@ -346,7 +341,7 @@ function validate(): string | null {
   }
   for (const owner of working.repoSwitcher.owners) {
     if (owner.trim() === "") continue;
-    if (!GITHUB_OWNER_RE.test(owner.trim())) {
+    if (!isValidGithubOwner(owner)) {
       return `Invalid GitHub owner: ${owner}`;
     }
   }
@@ -391,7 +386,7 @@ async function handleExport(): Promise<void> {
   link.href = url;
   link.download = `tabkit-settings-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 async function handleImport(file: File): Promise<void> {
@@ -403,6 +398,7 @@ async function handleImport(file: File): Promise<void> {
     status.classList.add("error");
     return;
   }
+  // handleSave reads values back from the form, so render the import first.
   render();
   await handleSave();
 }
@@ -420,7 +416,7 @@ async function refreshRepoStatus(): Promise<void> {
   $<HTMLSpanElement>("rs-status").textContent =
     oldestFetchAt === null
       ? "No repos cached yet."
-      : `${repoCount} repos cached (last refreshed ${new Date(oldestFetchAt).toLocaleString()}).`;
+      : `${repoCount} repos cached. Oldest list fetched ${new Date(oldestFetchAt).toLocaleString()}.`;
 }
 
 async function handleRepoRefresh(): Promise<void> {
@@ -429,11 +425,14 @@ async function handleRepoRefresh(): Promise<void> {
   button.disabled = true;
   status.textContent = "Refreshing…";
   try {
-    const { failed } = await refreshRepoCache(true);
+    const { failed } = await refreshRepoCache({ force: true });
     await refreshRepoStatus();
     if (failed.length > 0) {
-      status.textContent += ` Failed to fetch: ${failed.join(", ")}.`;
+      const details = failed.map((f) => `${f.owner} (${f.reason})`);
+      status.textContent += ` Failed to fetch: ${details.join(", ")}.`;
     }
+  } catch (err) {
+    status.textContent = `Refresh failed: ${(err as Error).message}`;
   } finally {
     button.disabled = false;
   }

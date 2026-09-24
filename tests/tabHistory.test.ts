@@ -38,7 +38,10 @@ describe("orderTabsByHistory", () => {
 
 describe("filterTabs", () => {
   const tabs = [
-    tab(1, { title: "Pull request #12", url: "https://github.com/a/b/pull/12" }),
+    tab(1, {
+      title: "Pull request #12",
+      url: "https://github.com/a/b/pull/12",
+    }),
     tab(2, { title: "Jira board", url: "https://acme.atlassian.net/board" }),
   ];
 

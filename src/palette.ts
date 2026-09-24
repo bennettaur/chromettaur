@@ -1,6 +1,7 @@
 export type PaletteMode = "repos" | "tabs";
 
-export const PALETTE_COMMANDS: Record<string, PaletteMode> = {
+// Keys must match the manifest `commands` in wxt.config.ts.
+export const PALETTE_COMMANDS: Partial<Record<string, PaletteMode>> = {
   "open-repo-switcher": "repos",
   "open-tab-history": "tabs",
 };

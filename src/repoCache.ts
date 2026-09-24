@@ -3,17 +3,23 @@ import type { RepoEntry, RepoVisitTimes } from "./repoSearch";
 import { loadSettings } from "./settings";
 
 export const REPO_CACHE_ALARM = "repo-cache";
-export const REPO_CACHE_REFRESH_MINUTES = 24 * 60;
+const REPO_CACHE_REFRESH_MINUTES = 24 * 60;
 
+const GITHUB_API = "https://api.github.com";
 const CACHE_KEY = "repoCache";
 const VISITED_KEY = "visitedRepos";
 const VISITED_CAP = 500;
 const STALE_AFTER_MS = REPO_CACHE_REFRESH_MINUTES * 60_000;
+const FETCH_TIMEOUT_MS = 15_000;
 // 100 repos per page, so this stops at 5,000 repos per owner. Guards against
 // paging forever if GitHub keeps returning a `next` link.
 const MAX_PAGES = 50;
 
-const REPO_URL_RE = /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)/;
+const REPO_URL_RE =
+  /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)/;
+// GitHub user/org names: up to 39 alphanumerics or single hyphens, not
+// starting or ending with a hyphen.
+const GITHUB_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 interface OwnerCache {
   repos: RepoEntry[];
@@ -23,7 +29,7 @@ interface OwnerCache {
 /** API results keyed by lowercased owner. */
 type RepoCache = Record<string, OwnerCache>;
 
-/** Repos seen in the address bar, keyed by lowercased `owner/name`. */
+/** Repo pages opened in any tab, keyed by lowercased `owner/name`. */
 type VisitedRepos = Record<string, { fullName: string; lastVisited: number }>;
 
 interface GithubRepoResponse {
@@ -33,21 +39,39 @@ interface GithubRepoResponse {
 }
 
 export class GithubRequestError extends Error {
+  override name = "GithubRequestError";
+
   constructor(
     readonly status: number,
+    readonly rateLimited: boolean,
     url: string,
   ) {
     super(`GitHub returned ${status} for ${url}`);
   }
+
+  static fromResponse(res: Response, url: string): GithubRequestError {
+    const rateLimited =
+      res.status === 429 ||
+      (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0");
+    return new GithubRequestError(res.status, rateLimited, url);
+  }
+}
+
+export interface RefreshFailure {
+  owner: string;
+  reason: string;
 }
 
 export interface RefreshResult {
-  refreshed: string[];
-  failed: string[];
+  failed: RefreshFailure[];
 }
 
 function ownerKey(owner: string): string {
   return owner.trim().toLowerCase();
+}
+
+export function isValidGithubOwner(owner: string): boolean {
+  return GITHUB_OWNER_RE.test(owner.trim());
 }
 
 export function extractRepoFullName(url: string): string | null {
@@ -65,13 +89,34 @@ export function parseNextLink(header: string | null): string | null {
   return null;
 }
 
-function githubHeaders(pat: string | undefined): Record<string, string> {
+function describeFailure(err: unknown): string {
+  if (err instanceof GithubRequestError) {
+    if (err.rateLimited) return "rate limited by GitHub";
+    if (err.status === 401) return "GitHub token rejected (401)";
+    if (err.status === 404) return "not found on GitHub (404)";
+    return `GitHub returned ${err.status}`;
+  }
+  if (err instanceof DOMException && err.name === "TimeoutError") {
+    return "timed out";
+  }
+  return "network error";
+}
+
+async function githubGet(
+  url: string,
+  pat: string | undefined,
+): Promise<Response> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (pat) headers.Authorization = `Bearer ${pat}`;
-  return headers;
+  const res = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw GithubRequestError.fromResponse(res, url);
+  return res;
 }
 
 async function fetchAllRepoPages(
@@ -81,8 +126,7 @@ async function fetchAllRepoPages(
   const repos: RepoEntry[] = [];
   let url: string | null = firstUrl;
   for (let page = 0; url && page < MAX_PAGES; page += 1) {
-    const res = await fetch(url, { headers: githubHeaders(pat) });
-    if (!res.ok) throw new GithubRequestError(res.status, url);
+    const res = await githubGet(url, pat);
     const body = (await res.json()) as GithubRepoResponse[];
     for (const repo of body) {
       // Archived repos clutter large orgs. Visiting one still adds it.
@@ -92,22 +136,16 @@ async function fetchAllRepoPages(
         description: repo.description ?? undefined,
       });
     }
-    url = parseNextLink(res.headers.get("link"));
+    const next = parseNextLink(res.headers.get("link"));
+    // Every request carries the PAT, so only follow links back to the API.
+    url = next && new URL(next).origin === GITHUB_API ? next : null;
   }
   return repos;
 }
 
-async function fetchViewerLogin(pat: string): Promise<string | null> {
-  try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: githubHeaders(pat),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { login?: string };
-    return body.login ?? null;
-  } catch {
-    return null;
-  }
+async function fetchViewerLogin(pat: string): Promise<string> {
+  const res = await githubGet(`${GITHUB_API}/user`, pat);
+  return ((await res.json()) as { login: string }).login;
 }
 
 /**
@@ -119,24 +157,23 @@ export async function fetchOwnerRepos(
   pat: string | undefined,
   viewerLogin: string | null,
 ): Promise<RepoEntry[]> {
-  const api = "https://api.github.com";
-  const name = encodeURIComponent(owner.trim());
+  const encodedOwner = encodeURIComponent(owner.trim());
 
   if (viewerLogin && ownerKey(viewerLogin) === ownerKey(owner)) {
     return fetchAllRepoPages(
-      `${api}/user/repos?affiliation=owner&per_page=100`,
+      `${GITHUB_API}/user/repos?affiliation=owner&per_page=100`,
       pat,
     );
   }
   try {
     return await fetchAllRepoPages(
-      `${api}/orgs/${name}/repos?type=all&per_page=100`,
+      `${GITHUB_API}/orgs/${encodedOwner}/repos?type=all&per_page=100`,
       pat,
     );
   } catch (err) {
     if (!(err instanceof GithubRequestError) || err.status !== 404) throw err;
     return fetchAllRepoPages(
-      `${api}/users/${name}/repos?type=owner&per_page=100`,
+      `${GITHUB_API}/users/${encodedOwner}/repos?type=owner&per_page=100`,
       pat,
     );
   }
@@ -152,41 +189,99 @@ async function loadVisitedRepos(): Promise<VisitedRepos> {
   return (r[VISITED_KEY] as VisitedRepos | undefined) ?? {};
 }
 
-/**
- * Fetch repo lists for every configured owner. Without `force`, only owners
- * that are missing from the cache or older than a day are fetched. A failed
- * owner keeps its previous list.
- */
-export async function refreshRepoCache(force: boolean): Promise<RefreshResult> {
-  const { owners } = (await loadSettings()).repoSwitcher;
+// Refreshes can run in the background, options page and palette at once, so
+// each write re-reads the cache and changes only its own owner.
+async function saveOwnerRepos(owner: string, entry: OwnerCache): Promise<void> {
   const cache = await loadRepoCache();
-  const now = Date.now();
-  const result: RefreshResult = { refreshed: [], failed: [] };
+  cache[ownerKey(owner)] = entry;
+  await chrome.storage.local.set({ [CACHE_KEY]: cache });
+}
 
-  const wanted = new Set(owners.map(ownerKey));
-  const toFetch = owners.filter((owner) => {
-    const entry = cache[ownerKey(owner)];
-    return force || !entry || now - entry.fetchedAt > STALE_AFTER_MS;
+async function dropRemovedOwners(): Promise<void> {
+  const { owners } = (await loadSettings()).repoSwitcher;
+  const allowed = new Set(owners.map(ownerKey));
+  const cache = await loadRepoCache();
+  const removed = Object.keys(cache).filter((key) => !allowed.has(key));
+  if (removed.length === 0) return;
+  for (const key of removed) delete cache[key];
+  await chrome.storage.local.set({ [CACHE_KEY]: cache });
+}
+
+export async function ensureRepoCacheAlarm(): Promise<void> {
+  const existing = await chrome.alarms.get(REPO_CACHE_ALARM);
+  if (existing?.periodInMinutes === REPO_CACHE_REFRESH_MINUTES) return;
+  await chrome.alarms.clear(REPO_CACHE_ALARM);
+  chrome.alarms.create(REPO_CACHE_ALARM, {
+    periodInMinutes: REPO_CACHE_REFRESH_MINUTES,
   });
-  const staleOwners = Object.keys(cache).filter((key) => !wanted.has(key));
-  if (toFetch.length === 0 && staleOwners.length === 0) return result;
+}
+
+async function fetchAndSaveOwners(
+  owners: string[],
+  now: number,
+): Promise<RefreshResult> {
+  const failAll = (list: string[], reason: string): RefreshFailure[] =>
+    list.map((owner) => ({ owner, reason }));
 
   const pat = await loadGithubPat();
-  const viewerLogin = pat ? await fetchViewerLogin(pat) : null;
-
-  for (const owner of toFetch) {
+  let viewerLogin: string | null = null;
+  if (pat) {
     try {
-      const repos = await fetchOwnerRepos(owner, pat, viewerLogin);
-      cache[ownerKey(owner)] = { repos, fetchedAt: now };
-      result.refreshed.push(owner);
-    } catch {
-      result.failed.push(owner);
+      viewerLogin = await fetchViewerLogin(pat);
+    } catch (err) {
+      // Without the login, the token owner's repos would come from the
+      // public-only endpoint and replace their cached private repos.
+      return { failed: failAll(owners, describeFailure(err)) };
     }
   }
-  for (const key of staleOwners) delete cache[key];
 
-  await chrome.storage.local.set({ [CACHE_KEY]: cache });
-  return result;
+  const failed: RefreshFailure[] = [];
+  for (const [idx, owner] of owners.entries()) {
+    try {
+      const repos = await fetchOwnerRepos(owner, pat, viewerLogin);
+      await saveOwnerRepos(owner, { repos, fetchedAt: now });
+    } catch (err) {
+      const reason = describeFailure(err);
+      if (err instanceof GithubRequestError && err.rateLimited) {
+        failed.push(...failAll(owners.slice(idx), reason));
+        break;
+      }
+      failed.push({ owner, reason });
+    }
+  }
+  return { failed };
+}
+
+let inFlightRefresh: Promise<RefreshResult> | null = null;
+
+/**
+ * Fetch repo lists for configured owners and drop owners no longer
+ * configured. Without `force`, only owners missing from the cache or older
+ * than `REPO_CACHE_REFRESH_MINUTES` are fetched. A failed owner keeps its
+ * previous list. Calls made while a refresh is running share its result.
+ */
+export function refreshRepoCache({
+  force = false,
+} = {}): Promise<RefreshResult> {
+  inFlightRefresh ??= (async () => {
+    const { owners } = (await loadSettings()).repoSwitcher;
+    const cache = await loadRepoCache();
+    const now = Date.now();
+    const toFetch = owners.filter((owner) => {
+      const entry = cache[ownerKey(owner)];
+      return force || !entry || now - entry.fetchedAt > STALE_AFTER_MS;
+    });
+
+    const result =
+      toFetch.length > 0
+        ? await fetchAndSaveOwners(toFetch, now)
+        : { failed: [] };
+    await dropRemovedOwners();
+    return result;
+  })().finally(() => {
+    inFlightRefresh = null;
+  });
+  return inFlightRefresh;
 }
 
 /** Remember a visit to a repo page if its owner is on the switcher allowlist. */
@@ -245,6 +340,7 @@ export async function loadRepoCandidates(): Promise<RepoCandidates> {
 
 export interface RepoCacheSummary {
   repoCount: number;
+  /** Fetch time of the least recently refreshed owner. */
   oldestFetchAt: number | null;
 }
 

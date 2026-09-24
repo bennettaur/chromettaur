@@ -13,6 +13,7 @@
         <h1>TabKit</h1>
         <p class="subtitle">
           Auto-close inactive tabs · dedupe configured URLs · auto-group by URL
+          · jump to GitHub repos and recent tabs
         </p>
         <div id="save-status" class="save-status" aria-live="polite"></div>
       </header>
@@ -197,8 +198,9 @@
           per hour from your IP — enough for a handful of PRs at a 5-minute
           poll. For more, create a fine-grained PAT with
           <strong>read-only Pull requests</strong> scope on the repos you
-          review and paste it below. The token is stored locally
-          (<code>chrome.storage.local</code>) and is never synced.
+          review and paste it below. The repo switcher uses the same token.
+          The token is stored locally (<code>chrome.storage.local</code>) and
+          is never synced.
         </p>
 
         <label class="row">
@@ -242,8 +244,10 @@
         <p class="hint">
           The repo switcher lists repos from the owners below. Repo lists come
           from the GitHub API (refreshed daily) plus any of these owners' repos
-          you visit. Private repos need the GitHub PAT above to have read
-          access to them.
+          you visit. Private repos only appear if the GitHub PAT above can read
+          them. A fine-grained PAT covers a single owner, so use a classic PAT
+          with <code>repo</code> scope (SSO-authorized where required) to
+          cover several. Refresh uses the saved owner list, so save first.
         </p>
 
         <div class="list-block">

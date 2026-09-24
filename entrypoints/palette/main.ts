@@ -1,5 +1,8 @@
-import type { PaletteMode } from "../../src/palette";
-import { loadRepoCandidates, refreshRepoCache } from "../../src/repoCache";
+import {
+  loadRepoCandidates,
+  refreshRepoCache,
+  type RepoCandidates,
+} from "../../src/repoCache";
 import { rankRepos, type RepoEntry } from "../../src/repoSearch";
 import {
   filterTabs,
@@ -22,9 +25,9 @@ interface PaletteSource {
   search: (query: string) => PaletteItem[];
 }
 
-let source: PaletteSource | null = null;
+let activeSource: PaletteSource | null = null;
 let items: PaletteItem[] = [];
-let selected = 0;
+let selectedIndex = 0;
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -37,12 +40,12 @@ function renderResults(): void {
   const empty = $<HTMLParagraphElement>("palette-empty");
   list.innerHTML = "";
   empty.hidden = items.length > 0;
-  empty.textContent = source?.emptyText ?? "";
+  empty.textContent = activeSource?.emptyText ?? "";
 
   items.forEach((item, idx) => {
     const li = document.createElement("li");
     li.setAttribute("role", "option");
-    li.classList.toggle("selected", idx === selected);
+    li.classList.toggle("selected", idx === selectedIndex);
 
     if (item.iconUrl) {
       const icon = document.createElement("img");
@@ -67,24 +70,28 @@ function renderResults(): void {
     list.append(li);
   });
 
-  list.children[selected]?.scrollIntoView({ block: "nearest" });
+  list.children[selectedIndex]?.scrollIntoView({ block: "nearest" });
 }
 
 function runSearch(): void {
-  items = source ? source.search($<HTMLInputElement>("palette-query").value) : [];
-  selected = 0;
+  const query = $<HTMLInputElement>("palette-query").value;
+  items = activeSource ? activeSource.search(query) : [];
+  selectedIndex = 0;
   renderResults();
 }
 
 function setSource(next: PaletteSource): void {
-  source = next;
+  activeSource = next;
   $<HTMLInputElement>("palette-query").placeholder = next.placeholder;
   runSearch();
 }
 
 async function openItem(item: PaletteItem): Promise<void> {
-  await item.open();
-  window.close();
+  try {
+    await item.open();
+  } finally {
+    window.close();
+  }
 }
 
 function repoItem(repo: RepoEntry): PaletteItem {
@@ -111,8 +118,10 @@ function tabItem(tab: chrome.tabs.Tab): PaletteItem {
   };
 }
 
-async function buildRepoSource(emptyText: string): Promise<PaletteSource> {
-  const { repos, visitTimes } = await loadRepoCandidates();
+function repoSource(
+  { repos, visitTimes }: RepoCandidates,
+  emptyText: string,
+): PaletteSource {
   return {
     placeholder: "Open a GitHub repo…",
     emptyText,
@@ -122,15 +131,19 @@ async function buildRepoSource(emptyText: string): Promise<PaletteSource> {
 }
 
 async function showRepos(): Promise<void> {
-  const initial = await buildRepoSource("No matching repos.");
-  setSource(initial);
-  if (initial.search("").length > 0) return;
-
-  setSource({ ...initial, emptyText: "Loading repos from GitHub…" });
-  await refreshRepoCache(false);
+  let candidates = await loadRepoCandidates();
+  // An empty cache means the background fetch hasn't run yet or failed.
+  if (candidates.repos.length === 0) {
+    setSource(repoSource(candidates, "Loading repos from GitHub…"));
+    await refreshRepoCache().catch(() => {});
+    candidates = await loadRepoCandidates();
+  }
   setSource(
-    await buildRepoSource(
-      "No repos found. Check the owners and GitHub token in TabKit settings.",
+    repoSource(
+      candidates,
+      candidates.repos.length > 0
+        ? "No matching repos."
+        : "No repos found. Check the owners and GitHub token in TabKit settings.",
     ),
   );
 }
@@ -141,8 +154,10 @@ async function showTabs(): Promise<void> {
     loadTabHistory(),
     chrome.tabs.query({ active: true, currentWindow: true }),
   ]);
+  // Keep incognito and regular tabs apart, whichever window the palette is in.
+  const incognito = current?.incognito ?? false;
   const ordered = orderTabsByHistory(
-    tabs.filter((tab) => tab.id !== current?.id),
+    tabs.filter((tab) => tab.id !== current?.id && tab.incognito === incognito),
     history,
   );
   setSource({
@@ -158,11 +173,11 @@ function handleKeydown(e: KeyboardEvent): void {
     e.preventDefault();
     if (items.length === 0) return;
     const step = e.key === "ArrowDown" ? 1 : -1;
-    selected = (selected + step + items.length) % items.length;
+    selectedIndex = (selectedIndex + step + items.length) % items.length;
     renderResults();
   } else if (e.key === "Enter") {
     e.preventDefault();
-    const item = items[selected];
+    const item = items[selectedIndex];
     if (item) void openItem(item);
   } else if (e.key === "Escape") {
     window.close();
@@ -175,7 +190,7 @@ function bootstrap(): void {
   input.addEventListener("keydown", handleKeydown);
   input.focus();
 
-  const mode = new URLSearchParams(location.search).get("mode") as PaletteMode;
+  const mode = new URLSearchParams(location.search).get("mode");
   void (mode === "repos" ? showRepos() : showTabs());
 }
 

@@ -75,7 +75,9 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
   if (!stored) return structuredClone(DEFAULT_SETTINGS);
-  return {
+  // Cloned so callers that edit lists in place (the options page) never
+  // modify DEFAULT_SETTINGS' own arrays.
+  return structuredClone({
     autoClose: { ...DEFAULT_SETTINGS.autoClose, ...stored.autoClose },
     uniqueness: { ...DEFAULT_SETTINGS.uniqueness, ...stored.uniqueness },
     autoGroup: { ...DEFAULT_SETTINGS.autoGroup, ...stored.autoGroup },
@@ -92,7 +94,7 @@ export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settin
       },
     },
     repoSwitcher: { ...DEFAULT_SETTINGS.repoSwitcher, ...stored.repoSwitcher },
-  };
+  });
 }
 
 export async function loadSettings(): Promise<Settings> {

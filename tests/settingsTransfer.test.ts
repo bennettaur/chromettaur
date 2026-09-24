@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS, mergeWithDefaults } from "../src/settings";
 import {
   parseSettingsImport,
   serializeSettings,
@@ -42,6 +42,19 @@ describe("serializeSettings / parseSettingsImport", () => {
       DEFAULT_SETTINGS.autoClose.minTabsOpen,
     );
     expect(imported.autoGroup).toEqual(DEFAULT_SETTINGS.autoGroup);
+    expect(imported.repoSwitcher).toEqual(DEFAULT_SETTINGS.repoSwitcher);
+  });
+});
+
+describe("mergeWithDefaults", () => {
+  it("returns lists that can be edited without changing the defaults", () => {
+    const settings = mergeWithDefaults({});
+
+    settings.repoSwitcher.owners.push("someone");
+    settings.autoGroup.rules.pop();
+
+    expect(DEFAULT_SETTINGS.repoSwitcher.owners).not.toContain("someone");
+    expect(DEFAULT_SETTINGS.autoGroup.rules).toHaveLength(2);
   });
 });
 
@@ -78,6 +91,55 @@ describe("parseSettingsImport rejects", () => {
     expect(() =>
       parseSettingsImport(exportWith({ repoSwitcher: { owners: [null] } })),
     ).toThrow('"repoSwitcher.owners" must be a list of strings');
+  });
+
+  it("a rule with no match pattern", () => {
+    expect(() =>
+      parseSettingsImport(
+        exportWith({
+          autoGroup: { rules: [{ id: "x", name: "X", color: "grey" }] },
+        }),
+      ),
+    ).toThrow('"autoGroup.rules" contains an invalid rule');
+  });
+
+  it("a uniqueness rule with an unknown key strategy", () => {
+    const rule = {
+      id: "x",
+      name: "X",
+      matchPattern: "https://example.com/*",
+      keyStrategy: "bogus",
+    };
+
+    expect(() =>
+      parseSettingsImport(exportWith({ uniqueness: { rules: [rule] } })),
+    ).toThrow('"uniqueness.rules" contains an invalid rule');
+  });
+
+  it("a rule list that isn't a list", () => {
+    expect(() =>
+      parseSettingsImport(exportWith({ uniqueness: { rules: {} } })),
+    ).toThrow('"uniqueness.rules" must be a list');
+  });
+
+  it("a non-boolean enabled flag", () => {
+    expect(() =>
+      parseSettingsImport(exportWith({ autoClose: { enabled: "false" } })),
+    ).toThrow('"autoClose.enabled" must be true or false');
+  });
+
+  it("an unknown auto-close action", () => {
+    expect(() =>
+      parseSettingsImport(exportWith({ autoClose: { action: "explode" } })),
+    ).toThrow('"autoClose.action" must be "close" or "discard"');
+  });
+
+  it("an invalid PR status group color", () => {
+    expect(() =>
+      parseSettingsImport(
+        exportWith({ prStatus: { groupColors: { draft: "magenta" } } }),
+      ),
+    ).toThrow('"prStatus.groupColors" has an invalid value');
   });
 
   it("a rule with a non-string match pattern", () => {

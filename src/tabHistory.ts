@@ -1,5 +1,6 @@
-// Tab IDs don't survive a browser restart, so history lives in session
-// storage. It still survives the service worker being suspended.
+// Tab IDs change across browser restarts, so history lives in session
+// storage: Chrome clears it on restart but keeps it while the service worker
+// is suspended.
 const HISTORY_KEY = "tabHistory";
 const HISTORY_CAP = 100;
 
@@ -40,10 +41,14 @@ export function forgetTab(tabId: number): Promise<void> {
   return updateHistory((ids) => ids.filter((id) => id !== tabId));
 }
 
-export function replaceTab(addedTabId: number, removedTabId: number): Promise<void> {
-  return updateHistory((ids) =>
-    ids.map((id) => (id === removedTabId ? addedTabId : id)),
-  );
+export function replaceTab(
+  addedTabId: number,
+  removedTabId: number,
+): Promise<void> {
+  return updateHistory((ids) => {
+    const withoutAdded = ids.filter((id) => id !== addedTabId);
+    return withoutAdded.map((id) => (id === removedTabId ? addedTabId : id));
+  });
 }
 
 /**
