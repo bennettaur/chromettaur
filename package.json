@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
+    "build:dev": "wxt build --mode local-dev",
     "zip": "wxt zip",
     "test": "vitest run",
     "test:watch": "vitest",

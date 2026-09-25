@@ -1,0 +1,88 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  margin: 0;
+  background: #fff;
+  color: #1f1f23;
+  font-size: 13px;
+}
+
+.palette {
+  width: 560px;
+  padding: 10px;
+}
+
+#palette-query {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #c8c8d1;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+#palette-query:focus {
+  border-color: #1f6feb;
+}
+
+/* Fixed height so the popup doesn't resize on every keystroke. */
+#palette-results {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  height: 400px;
+  overflow-y: auto;
+}
+
+#palette-results li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#palette-results li.selected {
+  background: #e8f0fe;
+}
+
+#palette-results img {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.item-title,
+.item-detail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-title {
+  font-weight: 600;
+}
+
+.item-detail {
+  color: #6c6c75;
+  font-size: 12px;
+}
+
+.empty {
+  color: #8a8a93;
+  font-style: italic;
+  margin: 12px 8px;
+}

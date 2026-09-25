@@ -5,25 +5,28 @@ import {
 } from "../../src/settings";
 import { isValidPattern, isValidRegex } from "../../src/matcher";
 import {
+  isValidGithubOwner,
+  refreshRepoCache,
+  summarizeRepoCache,
+} from "../../src/repoCache";
+import {
+  parseSettingsImport,
+  serializeSettings,
+} from "../../src/settingsTransfer";
+import {
   clearGithubPat,
   loadGithubPat,
   saveGithubPat,
 } from "../../src/githubPat";
 import {
   GROUP_COLORS,
+  KEY_STRATEGIES,
   type AutoGroupRule,
   type GroupColor,
   type KeyStrategy,
   type Settings,
   type UniquenessRule,
 } from "../../src/types";
-
-const KEY_STRATEGIES: KeyStrategy[] = [
-  "exact",
-  "ignoreFragment",
-  "ignoreQuery",
-  "regexCapture",
-];
 
 let working: Settings = structuredClone(DEFAULT_SETTINGS);
 
@@ -64,6 +67,9 @@ function render(): void {
   // PR status
   $<HTMLInputElement>("pr-enabled").checked = working.prStatus.enabled;
   $<HTMLInputElement>("pr-poll").value = String(working.prStatus.pollMinutes);
+
+  // Repo switcher
+  renderOwners();
 }
 
 function renderAllowlist(): void {
@@ -93,6 +99,41 @@ function renderAllowlist(): void {
     remove.addEventListener("click", () => {
       working.autoClose.allowlist.splice(idx, 1);
       renderAllowlist();
+    });
+
+    li.append(input, remove);
+    list.append(li);
+  });
+}
+
+function renderOwners(): void {
+  const list = $<HTMLUListElement>("rs-owners");
+  list.innerHTML = "";
+  working.repoSwitcher.owners.forEach((owner, idx) => {
+    const li = document.createElement("li");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = owner;
+    input.placeholder = "wealthsimple";
+    const updateValidity = (): void => {
+      input.classList.toggle(
+        "invalid",
+        input.value.trim() !== "" && !isValidGithubOwner(input.value),
+      );
+    };
+    input.addEventListener("input", () => {
+      working.repoSwitcher.owners[idx] = input.value;
+      updateValidity();
+    });
+    updateValidity();
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "row-remove";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      working.repoSwitcher.owners.splice(idx, 1);
+      renderOwners();
     });
 
     li.append(input, remove);
@@ -298,6 +339,12 @@ function validate(): string | null {
   ) {
     return "PR status poll interval must be ≥ 0.5 (Chrome floor).";
   }
+  for (const owner of working.repoSwitcher.owners) {
+    if (owner.trim() === "") continue;
+    if (!isValidGithubOwner(owner)) {
+      return `Invalid GitHub owner: ${owner}`;
+    }
+  }
   return null;
 }
 
@@ -313,6 +360,9 @@ async function handleSave(): Promise<void> {
   working.autoClose.allowlist = working.autoClose.allowlist.filter(
     (p) => p.trim() !== "",
   );
+  working.repoSwitcher.owners = working.repoSwitcher.owners
+    .map((o) => o.trim())
+    .filter((o) => o !== "");
   await saveSettings(working);
 
   const patInput = $<HTMLInputElement>("pr-pat");
@@ -355,12 +405,65 @@ async function handleRunSweepNow(): Promise<void> {
   }
 }
 
+async function handleExport(): Promise<void> {
+  const json = serializeSettings(await loadSettings());
+  const url = URL.createObjectURL(
+    new Blob([json], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `chromettaur-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function handleImport(file: File): Promise<void> {
+  try {
+    working = parseSettingsImport(await file.text());
+  } catch (err) {
+    const status = $<HTMLDivElement>("save-status");
+    status.textContent = `Import failed: ${(err as Error).message}`;
+    status.classList.add("error");
+    return;
+  }
+  // handleSave reads values back from the form, so render the import first.
+  render();
+  await handleSave();
+}
+
 async function refreshPatStatus(): Promise<void> {
   const stored = await loadGithubPat();
   const label = $<HTMLSpanElement>("pr-pat-status");
   label.textContent = stored
     ? "A token is currently saved."
     : "No token saved — using unauthenticated GitHub API (60 req/hr).";
+}
+
+async function refreshRepoStatus(): Promise<void> {
+  const { repoCount, oldestFetchAt } = await summarizeRepoCache();
+  $<HTMLSpanElement>("rs-status").textContent =
+    oldestFetchAt === null
+      ? "No repos cached yet."
+      : `${repoCount} repos cached. Oldest list fetched ${new Date(oldestFetchAt).toLocaleString()}.`;
+}
+
+async function handleRepoRefresh(): Promise<void> {
+  const button = $<HTMLButtonElement>("rs-refresh");
+  const status = $<HTMLSpanElement>("rs-status");
+  button.disabled = true;
+  status.textContent = "Refreshing…";
+  try {
+    const { failed } = await refreshRepoCache({ force: true });
+    await refreshRepoStatus();
+    if (failed.length > 0) {
+      const details = failed.map((f) => `${f.owner} (${f.reason})`);
+      status.textContent += ` Failed to fetch: ${details.join(", ")}.`;
+    }
+  } catch (err) {
+    status.textContent = `Refresh failed: ${(err as Error).message}`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function addUniquenessRule(): void {
@@ -388,12 +491,22 @@ function addAutoGroupRule(): void {
 async function bootstrap(): Promise<void> {
   working = await loadSettings();
   render();
-  await refreshPatStatus();
+  await Promise.all([refreshPatStatus(), refreshRepoStatus()]);
 
   $("save-btn").addEventListener("click", handleSave);
   $("reset-btn").addEventListener("click", () => {
     working = structuredClone(DEFAULT_SETTINGS);
     render();
+  });
+
+  $("rs-refresh").addEventListener("click", handleRepoRefresh);
+  $("export-btn").addEventListener("click", handleExport);
+  const importFile = $<HTMLInputElement>("import-file");
+  $("import-btn").addEventListener("click", () => importFile.click());
+  importFile.addEventListener("change", async () => {
+    const file = importFile.files?.[0];
+    importFile.value = "";
+    if (file) await handleImport(file);
   });
 
   $("pr-pat-clear").addEventListener("click", async () => {
@@ -416,6 +529,10 @@ async function bootstrap(): Promise<void> {
           break;
         case "add-ag":
           addAutoGroupRule();
+          break;
+        case "add-owner":
+          working.repoSwitcher.owners.push("");
+          renderOwners();
           break;
       }
     });

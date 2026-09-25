@@ -4,6 +4,13 @@ export type KeyStrategy =
   | "ignoreQuery"
   | "regexCapture";
 
+export const KEY_STRATEGIES: KeyStrategy[] = [
+  "exact",
+  "ignoreFragment",
+  "ignoreQuery",
+  "regexCapture",
+];
+
 export interface UniquenessRule {
   id: string;
   name: string;
@@ -90,11 +97,17 @@ export interface PrStatusSettings {
   groupTitles: Record<Exclude<PrStatus, "unknown">, string>;
 }
 
+export interface RepoSwitcherSettings {
+  /** GitHub orgs/users whose repos the repo switcher lists. */
+  owners: string[];
+}
+
 export interface Settings {
   autoClose: AutoCloseSettings;
   uniqueness: UniquenessSettings;
   autoGroup: AutoGroupSettings;
   prStatus: PrStatusSettings;
+  repoSwitcher: RepoSwitcherSettings;
 }
 
 export interface RecentlyClosedEntry {

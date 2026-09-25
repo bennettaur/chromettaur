@@ -2,6 +2,7 @@ import { defineBackground } from "wxt/sandbox";
 import { ensureSweepAlarm, runSweep, SWEEP_ALARM } from "../src/autoclose";
 import { handleAutoGroup, reconcileGroupChange } from "../src/autogroup";
 import { isRestrictedUrl } from "../src/matcher";
+import { openPalette, PALETTE_COMMANDS } from "../src/palette";
 import {
   clearPrStatusAlarm,
   ensurePrStatusAlarm,
@@ -10,8 +11,20 @@ import {
   PR_STATUS_ALARM,
   runPrStatusSweep,
 } from "../src/prstatus";
+import {
+  ensureRepoCacheAlarm,
+  recordRepoVisit,
+  refreshRepoCache,
+  REPO_CACHE_ALARM,
+} from "../src/repoCache";
 import { loadSettings } from "../src/settings";
 import { clearTabFromState, pruneStaleTabIds } from "../src/state";
+import {
+  forgetTab,
+  recordTabViewed,
+  recordWindowFocused,
+  replaceTab,
+} from "../src/tabHistory";
 import { handleUniqueness } from "../src/uniqueness";
 
 // MV3 service workers are ephemeral: every listener must be registered
@@ -30,6 +43,7 @@ async function initAlarms(): Promise<void> {
   } else {
     await clearPrStatusAlarm();
   }
+  await ensureRepoCacheAlarm();
 }
 
 async function kickPrSweepIfEnabled(): Promise<void> {
@@ -48,11 +62,19 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
     void initAlarms();
     void pruneStaleState();
+    void refreshRepoCache();
   });
 
   chrome.runtime.onStartup.addListener(() => {
     void initAlarms();
     void pruneStaleState();
+    void refreshRepoCache();
+  });
+
+  chrome.commands.onCommand.addListener((command) => {
+    const mode = PALETTE_COMMANDS[command];
+    // Fails when no normal window is focused or a popup is already open.
+    if (mode) openPalette(mode).catch(() => {});
   });
 
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -60,6 +82,8 @@ export default defineBackground(() => {
       void runSweep();
     } else if (alarm.name === PR_STATUS_ALARM) {
       void runPrStatusSweep();
+    } else if (alarm.name === REPO_CACHE_ALARM) {
+      void refreshRepoCache({ force: true });
     }
   });
 
@@ -67,6 +91,8 @@ export default defineBackground(() => {
     if (area !== "sync" || !changes.settings) return;
     void initAlarms();
     void kickPrSweepIfEnabled();
+    // Fetches newly added owners and drops removed ones.
+    void refreshRepoCache();
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -80,6 +106,24 @@ export default defineBackground(() => {
         }),
       );
     return true;
+  });
+
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    void recordTabViewed(tabId);
+  });
+
+  // tabs.onActivated doesn't fire on a window switch, since each window's
+  // active tab stays the same.
+  chrome.windows.onFocusChanged.addListener(
+    (windowId) => {
+      if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+      void recordWindowFocused(windowId);
+    },
+    { windowTypes: ["normal"] },
+  );
+
+  chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+    void replaceTab(addedTabId, removedTabId);
   });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -107,6 +151,7 @@ export default defineBackground(() => {
       pendingTimers.delete(tabId);
     }
     void clearTabFromState(tabId);
+    void forgetTab(tabId);
   });
 });
 
@@ -123,6 +168,8 @@ async function processTabNavigation(
 
   if (!tab.url) tab = { ...cachedTab, ...tab };
   if (!tab.url || isRestrictedUrl(tab.url)) return;
+
+  if (!tab.incognito) void recordRepoVisit(tab.url);
 
   const closedAsDup = await handleUniqueness(tab);
   if (closedAsDup) return;
