@@ -15,8 +15,10 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
    raise the API rate limit.
 5. **GitHub repo switcher** — **Alt+Shift+G** opens a search box in the
    toolbar popup. Type part of a repo name, press Enter, and the repo opens
-   in a new tab. Lists repos from an allowlist of owners (default:
-   `wealthsimple`, `bennettaur`).
+   in a new tab. Tab fills in the highlighted repo; add `#123` to open that
+   pull request instead (a bare `#` opens the repo's pull request list).
+   Lists repos from an allowlist of owners (default: `wealthsimple`,
+   `bennettaur`).
 6. **Recent tabs** — **Alt+Shift+H** lists open tabs in the order you last
    viewed them, across windows. Enter jumps to the selected tab; the tab you
    were on before the current one is selected by default.
@@ -236,6 +238,9 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] Alt+Shift+G opens the popup with a focused search box.
 - [ ] Typing `yarvis` puts `wealthsimple/yarvis` first; Enter opens it in a
       new tab and closes the popup.
+- [ ] Tab fills the search box with the highlighted `owner/name`.
+- [ ] `yarvis#12` (typed or after Tab) opens `wealthsimple/yarvis/pull/12`;
+      `yarvis#` opens its pull request list.
 - [ ] Arrow keys move the selection; Escape closes the popup.
 - [ ] Clicking the toolbar icon afterwards still shows the regular popup.
 - [ ] Visiting a repo under an allowlisted owner that the API didn't return

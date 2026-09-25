@@ -3,7 +3,12 @@ import {
   refreshRepoCache,
   type RepoCandidates,
 } from "../../src/repoCache";
-import { rankRepos, type RepoEntry } from "../../src/repoSearch";
+import {
+  parseRepoQuery,
+  rankRepos,
+  repoPageUrl,
+  type RepoEntry,
+} from "../../src/repoSearch";
 import {
   filterTabs,
   loadTabHistory,
@@ -16,6 +21,8 @@ interface PaletteItem {
   title: string;
   detail: string;
   iconUrl?: string;
+  /** Text that Tab puts in the search box. */
+  completion?: string;
   open: () => Promise<void>;
 }
 
@@ -94,13 +101,23 @@ async function openItem(item: PaletteItem): Promise<void> {
   }
 }
 
-function repoItem(repo: RepoEntry): PaletteItem {
+function repoItem(repo: RepoEntry, prNumber: string | null): PaletteItem {
   const [owner, name] = repo.fullName.split("/");
+  let title = name;
+  let detail = repo.description ? `${owner} · ${repo.description}` : owner;
+  if (prNumber) {
+    title = `${name} #${prNumber}`;
+    detail = `${owner} · pull request #${prNumber}`;
+  } else if (prNumber === "") {
+    detail = `${owner} · pull requests`;
+  }
   return {
-    title: name,
-    detail: repo.description ? `${owner} · ${repo.description}` : owner,
+    title,
+    detail,
+    completion:
+      prNumber === null ? repo.fullName : `${repo.fullName}#${prNumber}`,
     open: async () => {
-      await chrome.tabs.create({ url: `https://github.com/${repo.fullName}` });
+      await chrome.tabs.create({ url: repoPageUrl(repo.fullName, prNumber) });
     },
   };
 }
@@ -123,10 +140,14 @@ function repoSource(
   emptyText: string,
 ): PaletteSource {
   return {
-    placeholder: "Open a GitHub repo…",
+    placeholder: "Open a GitHub repo… (Tab completes, #123 opens a PR)",
     emptyText,
-    search: (query) =>
-      rankRepos(repos, query, visitTimes, MAX_RESULTS).map(repoItem),
+    search: (query) => {
+      const { repoText, prNumber } = parseRepoQuery(query);
+      return rankRepos(repos, repoText, visitTimes, MAX_RESULTS).map((repo) =>
+        repoItem(repo, prNumber),
+      );
+    },
   };
 }
 
@@ -179,6 +200,14 @@ function handleKeydown(e: KeyboardEvent): void {
     e.preventDefault();
     const item = items[selectedIndex];
     if (item) void openItem(item);
+  } else if (e.key === "Tab") {
+    // Keep focus in the search box; Tab only completes.
+    e.preventDefault();
+    const completion = items[selectedIndex]?.completion;
+    if (completion) {
+      $<HTMLInputElement>("palette-query").value = completion;
+      runSearch();
+    }
   } else if (e.key === "Escape") {
     window.close();
   }

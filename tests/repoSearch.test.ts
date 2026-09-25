@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { rankRepos, type RepoEntry } from "../src/repoSearch";
+import {
+  parseRepoQuery,
+  rankRepos,
+  repoPageUrl,
+  type RepoEntry,
+} from "../src/repoSearch";
 
 function repos(...fullNames: string[]): RepoEntry[] {
   return fullNames.map((fullName) => ({ fullName }));
@@ -103,6 +108,17 @@ describe("rankRepos", () => {
     expect(names(result)).toEqual(["a/bbb", "a/ccc", "a/aaa"]);
   });
 
+  it("puts an exact owner/name match first", () => {
+    const result = rankRepos(
+      repos("wealthsimple/yarvis-ui", "wealthsimple/yarvis"),
+      "wealthsimple/yarvis",
+      { "wealthsimple/yarvis-ui": 1000 },
+      10,
+    );
+
+    expect(names(result)[0]).toBe("wealthsimple/yarvis");
+  });
+
   it("drops repos that don't match", () => {
     expect(rankRepos(repos("a/zzz"), "llm", {}, 10)).toEqual([]);
   });
@@ -111,5 +127,46 @@ describe("rankRepos", () => {
     const result = rankRepos(repos("a/zx", "a/xy", "a/x"), "x", {}, 2);
 
     expect(names(result)).toEqual(["a/x", "a/xy"]);
+  });
+});
+
+describe("parseRepoQuery", () => {
+  it("returns the whole query when there's no #", () => {
+    expect(parseRepoQuery("yarvis")).toEqual({
+      repoText: "yarvis",
+      prNumber: null,
+    });
+  });
+
+  it("splits a trailing PR number off the repo text", () => {
+    expect(parseRepoQuery("wealthsimple/yarvis#123")).toEqual({
+      repoText: "wealthsimple/yarvis",
+      prNumber: "123",
+    });
+  });
+
+  it("reports an empty PR number while only # is typed", () => {
+    expect(parseRepoQuery("yarvis #")).toEqual({
+      repoText: "yarvis",
+      prNumber: "",
+    });
+  });
+
+  it("treats a # followed by non-digits as repo text", () => {
+    expect(parseRepoQuery("yarvis#abc").prNumber).toBeNull();
+  });
+});
+
+describe("repoPageUrl", () => {
+  it("links to the repo without a PR number", () => {
+    expect(repoPageUrl("a/b", null)).toBe("https://github.com/a/b");
+  });
+
+  it("links to the pull request list for a bare #", () => {
+    expect(repoPageUrl("a/b", "")).toBe("https://github.com/a/b/pulls");
+  });
+
+  it("links to a single pull request", () => {
+    expect(repoPageUrl("a/b", "42")).toBe("https://github.com/a/b/pull/42");
   });
 });

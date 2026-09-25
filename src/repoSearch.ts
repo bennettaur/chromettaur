@@ -7,6 +7,15 @@ export interface RepoEntry {
 /** Last visit time (ms since epoch) keyed by lowercased `owner/name`. */
 export type RepoVisitTimes = Record<string, number>;
 
+export interface RepoQuery {
+  /** The part of the query that matches repos. */
+  repoText: string;
+  /** Digits after a trailing `#`: "" while none are typed, null with no `#`. */
+  prNumber: string | null;
+}
+
+const PR_SUFFIX_RE = /^(.*)#(\d*)$/;
+
 // Lower tier wins. A query matches a repo in the first tier that applies.
 enum MatchTier {
   ExactName,
@@ -41,7 +50,7 @@ function isLaterWordPrefix(query: string, name: string): boolean {
 function findMatchTier(query: string, fullName: string): MatchTier | null {
   const full = fullName.toLowerCase();
   const name = repoName(full);
-  if (name === query) return MatchTier.ExactName;
+  if (name === query || full === query) return MatchTier.ExactName;
   if (name.startsWith(query)) return MatchTier.NamePrefix;
   if (isLaterWordPrefix(query, name)) return MatchTier.NameWordPrefix;
   if (name.includes(query)) return MatchTier.NameSubstring;
@@ -84,4 +93,21 @@ export function rankRepos(
   );
 
   return scored.slice(0, limit).map((s) => s.repo);
+}
+
+/** Split `yarvis#123` into the repo search text and the PR number. */
+export function parseRepoQuery(query: string): RepoQuery {
+  const m = PR_SUFFIX_RE.exec(query.trim());
+  if (!m) return { repoText: query, prNumber: null };
+  return { repoText: m[1].trim(), prNumber: m[2] };
+}
+
+/**
+ * The page to open for a repo: the repo itself, one pull request, or the
+ * pull request list when `#` was typed without a number.
+ */
+export function repoPageUrl(fullName: string, prNumber: string | null): string {
+  const repoUrl = `https://github.com/${fullName}`;
+  if (prNumber === null) return repoUrl;
+  return prNumber === "" ? `${repoUrl}/pulls` : `${repoUrl}/pull/${prNumber}`;
 }
