@@ -1,4 +1,4 @@
-# TabKit
+# Chromettaur
 
 A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
 
@@ -83,7 +83,7 @@ your normal browser permanently:
 2. Open `chrome://extensions`.
 3. Toggle **Developer mode** on (top-right).
 4. Click **Load unpacked** and select the `dist/chrome-mv3` directory.
-5. The extension appears as **TabKit**. Pin it to the toolbar for quick popup
+5. The extension appears as **Chromettaur**. Pin it to the toolbar for quick popup
    access.
 
 Chrome will prompt with a single permission notice ("Read your browsing
@@ -95,7 +95,19 @@ tabs.
 > this is normal for unpacked extensions and cannot be disabled.
 
 When you rebuild (`pnpm build`), return to `chrome://extensions` and click the
-refresh / reload icon on the TabKit card to pick up the new build.
+refresh / reload icon on the Chromettaur card to pick up the new build.
+
+### Testing a dev copy next to your installed build
+
+`pnpm build:dev` writes to `./dist/chrome-mv3-local-dev` and names the
+extension **Chromettaur (dev)**. Load that folder unpacked as well. Chrome
+derives an unpacked extension's ID from its folder, so the dev copy gets its
+own settings, tab history and repo cache.
+
+Both copies act on the same tabs. While testing, turn off tab uniqueness and
+auto-group in one of them so they don't both dedupe and group. Keyboard
+shortcuts bind to whichever copy claimed them first; reassign them at
+`chrome://extensions/shortcuts`.
 
 ---
 

@@ -1,5 +1,5 @@
 {
-  "name": "tabkit",
+  "name": "chromettaur",
   "private": true,
   "version": "0.1.0",
   "description": "Arc-like tab-management Chrome extension: auto-close, tab uniqueness, auto-group.",
@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
+    "build:dev": "wxt build --mode local-dev",
     "zip": "wxt zip",
     "test": "vitest run",
     "test:watch": "vitest",

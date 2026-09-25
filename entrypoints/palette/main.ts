@@ -143,7 +143,7 @@ async function showRepos(): Promise<void> {
       candidates,
       candidates.repos.length > 0
         ? "No matching repos."
-        : "No repos found. Check the owners and GitHub token in TabKit settings.",
+        : "No repos found. Check the owners and GitHub token in Chromettaur settings.",
     ),
   );
 }

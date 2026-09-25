@@ -384,7 +384,7 @@ async function handleExport(): Promise<void> {
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = `tabkit-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `chromettaur-settings-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

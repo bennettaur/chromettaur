@@ -7,7 +7,7 @@ import {
 
 function exportWith(settings: unknown, extra: Record<string, unknown> = {}) {
   return JSON.stringify({
-    format: "tabkit-settings",
+    format: "chromettaur-settings",
     version: 1,
     settings,
     ...extra,
@@ -63,9 +63,9 @@ describe("parseSettingsImport rejects", () => {
     expect(() => parseSettingsImport("{nope")).toThrow("not valid JSON");
   });
 
-  it("JSON that isn't a TabKit export", () => {
+  it("JSON that isn't a Chromettaur export", () => {
     expect(() => parseSettingsImport(JSON.stringify({ a: 1 }))).toThrow(
-      "not a TabKit settings export",
+      "not a Chromettaur settings export",
     );
   });
 

@@ -6,7 +6,7 @@ import {
   type Settings,
 } from "./types";
 
-const EXPORT_FORMAT = "tabkit-settings";
+const EXPORT_FORMAT = "chromettaur-settings";
 const EXPORT_VERSION = 1;
 
 interface SettingsExport {
@@ -105,7 +105,7 @@ function assertRecordOfIfPresent(
 
 /**
  * Parse a file produced by `serializeSettings`. Throws an Error with a
- * user-facing message when the file isn't a TabKit export, or when a section,
+ * user-facing message when the file isn't a Chromettaur export, or when a section,
  * list, rule, flag or choice has the wrong shape. Missing fields are filled
  * from defaults. Numbers and patterns are checked when the options page saves
  * the import.
@@ -118,7 +118,7 @@ export function parseSettingsImport(text: string): Settings {
     throw new Error("File is not valid JSON.");
   }
   if (!isRecord(parsed) || parsed.format !== EXPORT_FORMAT) {
-    throw new Error("File is not a TabKit settings export.");
+    throw new Error("File is not a Chromettaur settings export.");
   }
   if (typeof parsed.version !== "number" || parsed.version > EXPORT_VERSION) {
     throw new Error(`Unsupported export version: ${String(parsed.version)}.`);
