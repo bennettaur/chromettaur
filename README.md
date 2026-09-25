@@ -17,6 +17,7 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
    toolbar popup. Type part of a repo name, press Enter, and the repo opens
    in a new tab. Tab fills in the highlighted repo; add `#123` to open that
    pull request instead (a bare `#` opens the repo's pull request list).
+   `#123` on its own opens that PR in the repo you visited most recently.
    Lists repos from an allowlist of owners (default: `wealthsimple`,
    `bennettaur`).
 6. **Recent tabs** — **Alt+Shift+H** lists open tabs in the order you last

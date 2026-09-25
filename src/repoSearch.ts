@@ -14,11 +14,12 @@ export interface RepoQuery {
   prNumber: string | null;
 }
 
-const PR_SUFFIX_RE = /^(.*)#(\d*)$/;
+const PR_SUFFIX_RE = /^(.*)#\s*(\d*)$/;
 
 // Lower tier wins. A query matches a repo in the first tier that applies.
 enum MatchTier {
-  ExactName,
+  /** The query is the repo name or the full `owner/name`. */
+  Exact,
   NamePrefix,
   NameWordPrefix,
   NameSubstring,
@@ -50,7 +51,7 @@ function isLaterWordPrefix(query: string, name: string): boolean {
 function findMatchTier(query: string, fullName: string): MatchTier | null {
   const full = fullName.toLowerCase();
   const name = repoName(full);
-  if (name === query || full === query) return MatchTier.ExactName;
+  if (name === query || full === query) return MatchTier.Exact;
   if (name.startsWith(query)) return MatchTier.NamePrefix;
   if (isLaterWordPrefix(query, name)) return MatchTier.NameWordPrefix;
   if (name.includes(query)) return MatchTier.NameSubstring;
@@ -61,7 +62,7 @@ function findMatchTier(query: string, fullName: string): MatchTier | null {
 
 /**
  * Filter and order repos for the switcher. Matches are grouped by
- * `MatchTier`, from exact name match down to fuzzy. Within a tier,
+ * `MatchTier`, from exact match down to fuzzy. Within a tier,
  * recently visited repos come first, then shorter names, then alphabetical.
  * An empty query lists recently visited repos first.
  */
@@ -77,8 +78,7 @@ export function rankRepos(
 
   for (const repo of repos) {
     // Every repo ties on an empty query, so recency decides the order.
-    const tier =
-      q === "" ? MatchTier.ExactName : findMatchTier(q, repo.fullName);
+    const tier = q === "" ? MatchTier.Exact : findMatchTier(q, repo.fullName);
     if (tier === null) continue;
     const lastVisited = visitTimes[repo.fullName.toLowerCase()] ?? 0;
     scored.push({ repo, tier, lastVisited });
@@ -97,8 +97,9 @@ export function rankRepos(
 
 /** Split `yarvis#123` into the repo search text and the PR number. */
 export function parseRepoQuery(query: string): RepoQuery {
-  const m = PR_SUFFIX_RE.exec(query.trim());
-  if (!m) return { repoText: query, prNumber: null };
+  const trimmed = query.trim();
+  const m = PR_SUFFIX_RE.exec(trimmed);
+  if (!m) return { repoText: trimmed, prNumber: null };
   return { repoText: m[1].trim(), prNumber: m[2] };
 }
 

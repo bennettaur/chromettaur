@@ -119,6 +119,16 @@ describe("rankRepos", () => {
     expect(names(result)[0]).toBe("wealthsimple/yarvis");
   });
 
+  it("keeps the repo first when Tab's completion is searched again", () => {
+    const repoList = repos("WealthSimple/Yarvis-UI", "WealthSimple/Yarvis");
+    const { repoText, prNumber } = parseRepoQuery("WealthSimple/Yarvis#12");
+
+    const result = rankRepos(repoList, repoText, {}, 10);
+
+    expect(names(result)[0]).toBe("WealthSimple/Yarvis");
+    expect(prNumber).toBe("12");
+  });
+
   it("drops repos that don't match", () => {
     expect(rankRepos(repos("a/zzz"), "llm", {}, 10)).toEqual([]);
   });
@@ -152,8 +162,22 @@ describe("parseRepoQuery", () => {
     });
   });
 
+  it("allows a space after the #", () => {
+    expect(parseRepoQuery("yarvis # 12")).toEqual({
+      repoText: "yarvis",
+      prNumber: "12",
+    });
+  });
+
+  it("leaves the repo text empty for a bare PR number", () => {
+    expect(parseRepoQuery("#123")).toEqual({ repoText: "", prNumber: "123" });
+  });
+
   it("treats a # followed by non-digits as repo text", () => {
-    expect(parseRepoQuery("yarvis#abc").prNumber).toBeNull();
+    expect(parseRepoQuery("yarvis#abc")).toEqual({
+      repoText: "yarvis#abc",
+      prNumber: null,
+    });
   });
 });
 

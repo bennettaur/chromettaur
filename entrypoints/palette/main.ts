@@ -104,12 +104,14 @@ async function openItem(item: PaletteItem): Promise<void> {
 function repoItem(repo: RepoEntry, prNumber: string | null): PaletteItem {
   const [owner, name] = repo.fullName.split("/");
   let title = name;
-  let detail = repo.description ? `${owner} · ${repo.description}` : owner;
-  if (prNumber) {
-    title = `${name} #${prNumber}`;
-    detail = `${owner} · pull request #${prNumber}`;
+  let detail: string;
+  if (prNumber === null) {
+    detail = repo.description ? `${owner} · ${repo.description}` : owner;
   } else if (prNumber === "") {
     detail = `${owner} · pull requests`;
+  } else {
+    title = `${name} #${prNumber}`;
+    detail = `${owner} · pull request #${prNumber}`;
   }
   return {
     title,
