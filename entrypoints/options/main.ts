@@ -327,6 +327,34 @@ async function handleSave(): Promise<void> {
   setTimeout(() => (status.textContent = ""), 1500);
 }
 
+async function handleRunSweepNow(): Promise<void> {
+  const status = $<HTMLDivElement>("pr-run-status");
+  const btn = $<HTMLButtonElement>("pr-run-now");
+  status.classList.remove("error");
+  status.textContent = "Running PR sweep…";
+  btn.disabled = true;
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: "pr-status-sweep",
+    })) as { ok: boolean; error?: string } | undefined;
+    if (response?.ok) {
+      status.textContent = "PR sweep complete.";
+    } else {
+      status.textContent = `PR sweep failed: ${response?.error ?? "no response"}`;
+      status.classList.add("error");
+    }
+  } catch (e) {
+    status.textContent = `PR sweep failed: ${e instanceof Error ? e.message : String(e)}`;
+    status.classList.add("error");
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => {
+      status.textContent = "";
+      status.classList.remove("error");
+    }, 3000);
+  }
+}
+
 async function refreshPatStatus(): Promise<void> {
   const stored = await loadGithubPat();
   const label = $<HTMLSpanElement>("pr-pat-status");
@@ -373,6 +401,8 @@ async function bootstrap(): Promise<void> {
     $<HTMLInputElement>("pr-pat").value = "";
     await refreshPatStatus();
   });
+
+  $("pr-run-now").addEventListener("click", handleRunSweepNow);
 
   document.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
     btn.addEventListener("click", () => {

@@ -4,13 +4,13 @@ export default defineConfig({
   srcDir: ".",
   outDir: "dist",
   manifest: {
-    name: "TabKit",
+    name: "Chromettaur",
     description:
       "Auto-close inactive tabs, dedupe configured URLs, auto-group by URL.",
-    version: "0.1.0",
+    version: "0.2.0",
     permissions: ["tabs", "tabGroups", "alarms", "storage"],
     action: {
-      default_title: "TabKit",
+      default_title: "Chromettaur",
     },
   },
 });

@@ -30,8 +30,8 @@ export const DEFAULT_AUTOGROUP_RULES: AutoGroupRule[] = [
 export const DEFAULT_SETTINGS: Settings = {
   autoClose: {
     enabled: true,
-    idleMinutes: 60,
-    sweepIntervalMinutes: 1,
+    idleMinutes: 4320,
+    sweepIntervalMinutes: 10,
     minTabsOpen: 5,
     action: "close",
     protectPinned: true,

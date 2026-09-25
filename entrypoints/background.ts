@@ -32,6 +32,11 @@ async function initAlarms(): Promise<void> {
   }
 }
 
+async function kickPrSweepIfEnabled(): Promise<void> {
+  const settings = await loadSettings();
+  if (settings.prStatus.enabled) await runPrStatusSweep();
+}
+
 async function pruneStaleState(): Promise<void> {
   const tabs = await chrome.tabs.query({});
   const ids = new Set<number>();
@@ -61,6 +66,20 @@ export default defineBackground(() => {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync" || !changes.settings) return;
     void initAlarms();
+    void kickPrSweepIfEnabled();
+  });
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== "pr-status-sweep") return false;
+    runPrStatusSweep()
+      .then(() => sendResponse({ ok: true }))
+      .catch((e: unknown) =>
+        sendResponse({
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    return true;
   });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {

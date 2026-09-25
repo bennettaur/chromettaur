@@ -138,10 +138,15 @@ async function applyPrStatusToTab(
     return;
   }
 
+  // If the tab is currently in a group we did NOT place it in (no managed
+  // entry at all), respect the user's placement and skip. But if we placed
+  // it there via a different rule (e.g. the generic auto-group rule), PR
+  // status takes priority — fall through and reclaim it.
   if (
     tab.groupId !== undefined &&
     tab.groupId !== -1 &&
-    !managedByUs
+    !managedByUs &&
+    managed == null
   ) {
     return;
   }

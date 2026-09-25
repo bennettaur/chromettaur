@@ -1,4 +1,4 @@
-# TabKit
+# Chromettaur
 
 A Manifest V3 Chrome extension that adds four Arc-like tab behaviors to Chrome:
 
@@ -74,7 +74,7 @@ your normal browser permanently:
 2. Open `chrome://extensions`.
 3. Toggle **Developer mode** on (top-right).
 4. Click **Load unpacked** and select the `dist/chrome-mv3` directory.
-5. The extension appears as **TabKit**. Pin it to the toolbar for quick popup
+5. The extension appears as **Chromettaur**. Pin it to the toolbar for quick popup
    access.
 
 Chrome will prompt with a single permission notice ("Read your browsing
@@ -86,7 +86,7 @@ tabs.
 > this is normal for unpacked extensions and cannot be disabled.
 
 When you rebuild (`pnpm build`), return to `chrome://extensions` and click the
-refresh / reload icon on the TabKit card to pick up the new build.
+refresh / reload icon on the Chromettaur card to pick up the new build.
 
 ---
 

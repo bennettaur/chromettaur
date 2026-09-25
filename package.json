@@ -1,7 +1,7 @@
 {
-  "name": "tabkit",
+  "name": "chromettaur",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Arc-like tab-management Chrome extension: auto-close, tab uniqueness, auto-group.",
   "type": "module",
   "scripts": {
