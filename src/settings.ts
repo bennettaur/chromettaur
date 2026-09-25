@@ -29,7 +29,9 @@ export const DEFAULT_AUTOGROUP_RULES: AutoGroupRule[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   autoClose: {
-    enabled: true,
+    // Off until the user opts in, so a fresh install can't close tabs before
+    // idle time, min tabs and the allowlist have been configured.
+    enabled: false,
     idleMinutes: 60,
     sweepIntervalMinutes: 1,
     minTabsOpen: 5,
@@ -66,11 +68,16 @@ export const DEFAULT_SETTINGS: Settings = {
       closed: "PR: Closed",
     },
   },
+  repoSwitcher: {
+    owners: ["wealthsimple", "bennettaur"],
+  },
 };
 
-function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
+export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
   if (!stored) return structuredClone(DEFAULT_SETTINGS);
-  return {
+  // Cloned so callers that edit lists in place (the options page) never
+  // modify DEFAULT_SETTINGS' own arrays.
+  return structuredClone({
     autoClose: { ...DEFAULT_SETTINGS.autoClose, ...stored.autoClose },
     uniqueness: { ...DEFAULT_SETTINGS.uniqueness, ...stored.uniqueness },
     autoGroup: { ...DEFAULT_SETTINGS.autoGroup, ...stored.autoGroup },
@@ -86,7 +93,8 @@ function mergeWithDefaults(stored: Partial<Settings> | undefined): Settings {
         ...stored.prStatus?.groupTitles,
       },
     },
-  };
+    repoSwitcher: { ...DEFAULT_SETTINGS.repoSwitcher, ...stored.repoSwitcher },
+  });
 }
 
 export async function loadSettings(): Promise<Settings> {

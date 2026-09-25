@@ -4,15 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="manifest.open_in_tab" content="true" />
-    <title>TabKit — Settings</title>
+    <title>Chromettaur — Settings</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main class="container">
       <header>
-        <h1>TabKit</h1>
+        <h1>Chromettaur</h1>
         <p class="subtitle">
           Auto-close inactive tabs · dedupe configured URLs · auto-group by URL
+          · jump to GitHub repos and recent tabs
         </p>
         <div id="save-status" class="save-status" aria-live="polite"></div>
       </header>
@@ -197,8 +198,9 @@
           per hour from your IP — enough for a handful of PRs at a 5-minute
           poll. For more, create a fine-grained PAT with
           <strong>read-only Pull requests</strong> scope on the repos you
-          review and paste it below. The token is stored locally
-          (<code>chrome.storage.local</code>) and is never synced.
+          review and paste it below. The repo switcher uses the same token.
+          The token is stored locally (<code>chrome.storage.local</code>) and
+          is never synced.
         </p>
 
         <label class="row">
@@ -230,11 +232,50 @@
         </div>
       </section>
 
+      <section id="section-reposwitcher">
+        <h2>Keyboard shortcuts</h2>
+        <p class="hint">
+          <strong>Alt+Shift+G</strong> opens the GitHub repo switcher: type part
+          of a repo name, press Enter, and the repo opens in a new tab.
+          <strong>Alt+Shift+H</strong> lists your tabs in the order you last
+          viewed them. Change either shortcut at
+          <code>chrome://extensions/shortcuts</code>.
+        </p>
+        <p class="hint">
+          The repo switcher lists repos from the owners below. Repo lists come
+          from the GitHub API (refreshed daily) plus any of these owners' repos
+          you visit. Private repos only appear if the GitHub PAT above can read
+          them. A fine-grained PAT covers a single owner, so use a classic PAT
+          with <code>repo</code> scope (SSO-authorized where required) to
+          cover several. Refresh uses the saved owner list, so save first.
+        </p>
+
+        <div class="list-block">
+          <h3>GitHub owners (orgs or users)</h3>
+          <ul id="rs-owners" class="pattern-list"></ul>
+          <button type="button" data-action="add-owner">+ Add owner</button>
+        </div>
+        <div class="row">
+          <button type="button" id="rs-refresh" class="secondary">
+            Refresh repo list now
+          </button>
+          <span id="rs-status" class="hint" style="margin-left: 8px"></span>
+        </div>
+      </section>
+
       <footer>
         <button id="save-btn" type="button">Save settings</button>
         <button id="reset-btn" type="button" class="secondary">
           Reset to defaults
         </button>
+        <span class="footer-spacer"></span>
+        <button id="export-btn" type="button" class="secondary">
+          Export settings
+        </button>
+        <button id="import-btn" type="button" class="secondary">
+          Import settings…
+        </button>
+        <input id="import-file" type="file" accept="application/json,.json" hidden />
       </footer>
     </main>
     <script type="module" src="./main.ts"></script>

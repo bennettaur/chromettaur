@@ -1,9 +1,10 @@
-# TabKit
+# Chromettaur
 
-A Manifest V3 Chrome extension that adds four Arc-like tab behaviors to Chrome:
+A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
 
-1. **Auto-close inactive tabs** — close (or discard) tabs idle past a configurable
-   threshold, with protections and a recently-closed restore list.
+1. **Auto-close inactive tabs** *(opt-in)* — close (or discard) tabs idle past
+   a configurable threshold, with protections and a recently-closed restore
+   list.
 2. **Tab uniqueness** — for configured URL patterns (default: GitHub PR pages),
    prevent duplicate tabs by focusing the existing tab and closing the new one.
 3. **Auto-group by URL** — automatically place tabs into named, colored tab
@@ -12,9 +13,20 @@ A Manifest V3 Chrome extension that adds four Arc-like tab behaviors to Chrome:
    for the status of each open PR tab and places it into a colored group:
    `PR: Draft` / `Ready` / `Blocked` / `Merged` / `Closed`. Optional PAT to
    raise the API rate limit.
+5. **GitHub repo switcher** — **Alt+Shift+G** opens a search box in the
+   toolbar popup. Type part of a repo name, press Enter, and the repo opens
+   in a new tab. Tab fills in the highlighted repo; add `#123` to open that
+   pull request instead (a bare `#` opens the repo's pull request list).
+   `#123` on its own opens that PR in the repo you visited most recently.
+   Lists repos from an allowlist of owners (default: `wealthsimple`,
+   `bennettaur`).
+6. **Recent tabs** — **Alt+Shift+H** lists open tabs in the order you last
+   viewed them, across windows. Enter jumps to the selected tab; the tab you
+   were on before the current one is selected by default.
 
 The extension is loaded **unpacked** for personal use; there is no Web Store
-distribution and no content scripts / host permissions / network calls.
+distribution, no content scripts, and no host permissions. PR status grouping
+and the repo switcher call the GitHub API (see *A note on network access*).
 
 ---
 
@@ -49,7 +61,7 @@ From the project root:
 
 ```bash
 pnpm install              # one-time
-pnpm test                 # runs matcher.ts unit tests (Vitest)
+pnpm test                 # runs unit tests (Vitest)
 pnpm build                # production build → dist/chrome-mv3
 ```
 
@@ -74,7 +86,7 @@ your normal browser permanently:
 2. Open `chrome://extensions`.
 3. Toggle **Developer mode** on (top-right).
 4. Click **Load unpacked** and select the `dist/chrome-mv3` directory.
-5. The extension appears as **TabKit**. Pin it to the toolbar for quick popup
+5. The extension appears as **Chromettaur**. Pin it to the toolbar for quick popup
    access.
 
 Chrome will prompt with a single permission notice ("Read your browsing
@@ -86,14 +98,26 @@ tabs.
 > this is normal for unpacked extensions and cannot be disabled.
 
 When you rebuild (`pnpm build`), return to `chrome://extensions` and click the
-refresh / reload icon on the TabKit card to pick up the new build.
+refresh / reload icon on the Chromettaur card to pick up the new build.
+
+### Testing a dev copy next to your installed build
+
+`pnpm build:dev` writes to `./dist/chrome-mv3-local-dev` and names the
+extension **Chromettaur (dev)**. Load that folder unpacked as well. Chrome
+derives an unpacked extension's ID from its folder, so the dev copy gets its
+own settings, tab history and repo cache.
+
+Both copies act on the same tabs. While testing, turn off tab uniqueness and
+auto-group in one of them so they don't both dedupe and group. Keyboard
+shortcuts bind to whichever copy claimed them first; reassign them at
+`chrome://extensions/shortcuts`.
 
 ---
 
 ## Configuration
 
 Open the options page from the popup → **Settings…**, or right-click the
-toolbar icon → **Options**. All three features have their own section:
+toolbar icon → **Options**. Each feature has its own section:
 
 - **Auto-close** — idle minutes, sweep interval, min tabs to keep open,
   close-vs-discard, per-protection toggles, allowlist patterns.
@@ -103,22 +127,48 @@ toolbar icon → **Options**. All three features have their own section:
   the dedup key).
 - **Auto-group** — enable/disable, "respect user moves" toggle, edit/remove/add
   rules (group title, color, URL match pattern).
+- **GitHub PR status grouping** — enable/disable, poll interval, optional
+  GitHub PAT (also used by the repo switcher).
+- **Keyboard shortcuts** — the GitHub owners the repo switcher lists, and a
+  button to refresh the cached repo list.
+
+Both shortcuts can be changed at `chrome://extensions/shortcuts`. Chrome only
+applies a suggested shortcut if nothing else already uses it, so check that
+page if a shortcut does nothing after install.
+
+The repo switcher keeps a cache of each owner's repos from the GitHub API,
+refreshed daily (archived repos are skipped). Repos you visit under an
+allowlisted owner are added too, and recent visits rank higher in results.
+Private repos only show up from the API if the GitHub PAT can read them: a
+fine-grained PAT covers a single owner, so use a classic PAT with `repo`
+scope (SSO-authorized for orgs that need it) to cover several.
 
 Match patterns follow Chrome's `<scheme>://<host>/<path>` shape with `*`
 wildcards (e.g. `https://github.com/*/*/pull/*`, `https://*.atlassian.net/*`).
 
+**Export settings** / **Import settings…** in the options footer save and
+load all settings as a JSON file. An import is validated like a manual save
+and saved immediately. The GitHub PAT is never included in an export.
+
 Settings are stored in `chrome.storage.sync` (so they roam with your Chrome
 profile). Runtime bookkeeping (managed tabs, user overrides, recently-closed
-list) lives in `chrome.storage.local`. The optional GitHub PAT is stored only
+list), the repo switcher's cached repo lists, and up to 500 recently visited
+repos under allowlisted owners live in `chrome.storage.local`. Incognito
+visits are not recorded. Recent-tab order lives in `chrome.storage.session`,
+which Chrome clears on restart, so right after a restart the order falls back
+to Chrome's own last-accessed times. The optional GitHub PAT is stored only
 in `chrome.storage.local` (never synced).
 
 ### A note on network access
 
-Features 1–3 make no external network calls. **Feature 5 (PR status grouping)
-talks to `https://api.github.com/`** to read PR metadata. It does not require
-`host_permissions` (an extension service worker can `fetch()` any origin) and
-does not inject content scripts. Disable Feature 5 in Options if you don't
-want the extension making any outbound traffic.
+Features 1–3 and recent tabs make no external network calls. **PR status
+grouping and the repo switcher talk to `https://api.github.com/`** to read PR
+metadata and repo lists. PR status grouping is opt-in; the repo switcher
+fetches its default owners as soon as the extension is installed. Neither
+needs `host_permissions` (an extension service worker can `fetch()` any
+origin) or content scripts. Disable PR status grouping and remove every repo
+switcher owner in Options if you don't want the extension making any outbound
+traffic.
 
 ---
 
@@ -128,6 +178,8 @@ These should all pass on Chrome 149 after a fresh build and load.
 
 ### Feature 2 — auto-close
 
+- [ ] Disabled by default on a fresh install. Enable it in **Options →
+      Auto-close inactive tabs** or the popup toggle.
 - [ ] Set idle to 1 min, sweep to 0.5 min, min tabs to 2. Open 5 tabs, leave
       them; within ~2 min the inactive ones close down to 2, oldest-first.
 - [ ] The active tab is never closed.
@@ -182,6 +234,28 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] PR URLs never end up in the generic "GitHub" group while PR status is
       enabled.
 
+### GitHub repo switcher
+
+- [ ] Alt+Shift+G opens the popup with a focused search box.
+- [ ] Typing `yarvis` puts `wealthsimple/yarvis` first; Enter opens it in a
+      new tab and closes the popup.
+- [ ] Tab fills the search box with the highlighted `owner/name`.
+- [ ] `yarvis#12` (typed or after Tab) opens `wealthsimple/yarvis/pull/12`;
+      `yarvis#` opens its pull request list.
+- [ ] Arrow keys move the selection; Escape closes the popup.
+- [ ] Clicking the toolbar icon afterwards still shows the regular popup.
+- [ ] Visiting a repo under an allowlisted owner that the API didn't return
+      makes it show up in the switcher.
+- [ ] **Refresh repo list now** in Options reports the cached repo count.
+
+### Recent tabs
+
+- [ ] Switch between three tabs (including one in another window), then
+      Alt+Shift+H lists them most recent first, without the current tab.
+- [ ] Enter on the first entry jumps back to the previous tab.
+- [ ] Typing filters by title and URL.
+- [ ] Closed tabs disappear from the list.
+
 ### General / lifecycle
 
 - [ ] `chrome://`, web store, and `about:` tabs are never touched by any
@@ -189,7 +263,7 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] Stale `managed`/`userOverride` entries are pruned after a browser
       restart.
 - [ ] No errors in the service worker console during normal use.
-- [ ] `matcher.ts` unit tests pass (`pnpm test`).
+- [ ] Unit tests pass (`pnpm test`).
 
 ---
 
