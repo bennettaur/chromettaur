@@ -6,7 +6,13 @@ import { addUserOverride, loadState, recordManaged } from "./state";
 import type { PrStatus, PrStatusSettings } from "./types";
 
 export const PR_STATUS_ALARM = "pr-status";
+export const PR_STATUS_SWEEP_MESSAGE = "pr-status-sweep";
 const PR_RULE_ID_PREFIX = "pr-status:";
+
+export interface PrSweepResponse {
+  ok: boolean;
+  error?: string;
+}
 
 const PR_URL_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
 
@@ -123,8 +129,6 @@ async function applyPrStatusToTab(
   }
 
   const managed = state.managed[tab.id];
-  const managedByUs =
-    managed?.groupRuleId.startsWith(PR_RULE_ID_PREFIX) ?? false;
 
   if (
     tab.groupId !== undefined &&
@@ -138,11 +142,10 @@ async function applyPrStatusToTab(
     return;
   }
 
-  if (
-    tab.groupId !== undefined &&
-    tab.groupId !== -1 &&
-    !managedByUs
-  ) {
+  // A group the extension never assigned was chosen by the user, so leave it.
+  // Tabs another extension rule grouped (e.g. generic auto-group) fall through
+  // so PR status wins over it.
+  if (tab.groupId !== undefined && tab.groupId !== -1 && managed == null) {
     return;
   }
 
@@ -166,16 +169,28 @@ async function applyPrStatusToTab(
   }
 }
 
+let inFlightSweep: Promise<boolean> | null = null;
+
 /**
  * Sweep every tab whose URL matches a GitHub PR, fetch its status, and place
  * it into the matching PR-status group. Dedupes per `owner/repo/number` so we
  * only hit the API once per unique PR even if several tabs (sub-views) point
- * at it.
+ * at it. Resolves to false when PR status grouping is disabled.
+ *
+ * Calls made while a sweep is running share it. Two sweeps moving the same
+ * tab at once can create duplicate groups and record false user overrides.
  */
-export async function runPrStatusSweep(): Promise<void> {
+export function runPrStatusSweep(): Promise<boolean> {
+  inFlightSweep ??= sweepPrTabs().finally(() => {
+    inFlightSweep = null;
+  });
+  return inFlightSweep;
+}
+
+async function sweepPrTabs(): Promise<boolean> {
   const settings = await loadSettings();
   const cfg = settings.prStatus;
-  if (!cfg.enabled) return;
+  if (!cfg.enabled) return false;
 
   const pat = await loadGithubPat();
   const respectUserOverride = settings.autoGroup.respectUserOverride;
@@ -210,6 +225,7 @@ export async function runPrStatusSweep(): Promise<void> {
       });
     }
   }
+  return true;
 }
 
 /**

@@ -9,7 +9,9 @@ import {
   extractPrCoords,
   handlePrTabNavigation,
   PR_STATUS_ALARM,
+  PR_STATUS_SWEEP_MESSAGE,
   runPrStatusSweep,
+  type PrSweepResponse,
 } from "../src/prstatus";
 import {
   ensureRepoCacheAlarm,
@@ -85,8 +87,39 @@ export default defineBackground(() => {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync" || !changes.settings) return;
     void initAlarms();
+    // Applies PR status changes now instead of at the next poll. Other
+    // settings are skipped because each sweep calls the GitHub API per PR.
+    const { oldValue, newValue } = changes.settings;
+    if (
+      JSON.stringify(oldValue?.prStatus) !== JSON.stringify(newValue?.prStatus)
+    ) {
+      void runPrStatusSweep();
+    }
     // Fetches newly added owners and drops removed ones.
     void refreshRepoCache();
+  });
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== PR_STATUS_SWEEP_MESSAGE) return false;
+    runPrStatusSweep()
+      .then(
+        (ran): PrSweepResponse =>
+          ran
+            ? { ok: true }
+            : {
+                ok: false,
+                error: "PR status grouping is off. Enable it and save first.",
+              },
+      )
+      .catch(
+        (err: unknown): PrSweepResponse => ({
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
+      .then(sendResponse);
+    // Keeps the message channel open so sendResponse works after the sweep.
+    return true;
   });
 
   chrome.tabs.onActivated.addListener(({ tabId }) => {

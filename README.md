@@ -128,7 +128,10 @@ toolbar icon → **Options**. Each feature has its own section:
 - **Auto-group** — enable/disable, "respect user moves" toggle, edit/remove/add
   rules (group title, color, URL match pattern).
 - **GitHub PR status grouping** — enable/disable, poll interval, optional
-  GitHub PAT (also used by the repo switcher).
+  GitHub PAT (also used by the repo switcher), and a **Run PR sweep now**
+  button. Saving a change to these settings also runs a sweep. PR status wins
+  over auto-group: PR tabs that auto-group put in its "GitHub" group move to
+  their `PR: *` group, while PR tabs you grouped by hand stay put.
 - **Keyboard shortcuts** — the GitHub owners the repo switcher lists, and a
   button to refresh the cached repo list.
 
@@ -231,8 +234,10 @@ These should all pass on Chrome 149 after a fresh build and load.
       5,000 req/hr.
 - [ ] Manually drag a PR tab into another group → it is not yanked back
       (`userOverride` respected, same as Feature 4).
-- [ ] PR URLs never end up in the generic "GitHub" group while PR status is
-      enabled.
+- [ ] A PR tab that auto-group put in the generic "GitHub" group moves to its
+      `PR: *` group on the next PR sweep.
+- [ ] Enable PR status and save, or click **Run PR sweep now** → open PR tabs
+      are grouped without waiting for the poll interval.
 
 ### GitHub repo switcher
 

@@ -32,8 +32,8 @@ export const DEFAULT_SETTINGS: Settings = {
     // Off until the user opts in, so a fresh install can't close tabs before
     // idle time, min tabs and the allowlist have been configured.
     enabled: false,
-    idleMinutes: 60,
-    sweepIntervalMinutes: 1,
+    idleMinutes: 3 * 24 * 60,
+    sweepIntervalMinutes: 10,
     minTabsOpen: 5,
     action: "close",
     protectPinned: true,

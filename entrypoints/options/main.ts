@@ -19,6 +19,10 @@ import {
   saveGithubPat,
 } from "../../src/githubPat";
 import {
+  PR_STATUS_SWEEP_MESSAGE,
+  type PrSweepResponse,
+} from "../../src/prstatus";
+import {
   GROUP_COLORS,
   KEY_STRATEGIES,
   type AutoGroupRule,
@@ -377,6 +381,36 @@ async function handleSave(): Promise<void> {
   setTimeout(() => (status.textContent = ""), 1500);
 }
 
+async function handleRunSweepNow(): Promise<void> {
+  const status = $<HTMLDivElement>("pr-run-status");
+  const button = $<HTMLButtonElement>("pr-run-now");
+  status.classList.remove("error");
+  status.textContent = "Running PR sweep…";
+  button.disabled = true;
+  try {
+    // Sent to the background so its in-flight tracking sees the sweep's own
+    // group moves and doesn't record them as user overrides.
+    const response = (await chrome.runtime.sendMessage({
+      type: PR_STATUS_SWEEP_MESSAGE,
+    })) as PrSweepResponse | undefined;
+    if (response?.ok) {
+      status.textContent = "PR sweep complete.";
+    } else {
+      status.textContent = `PR sweep failed: ${response?.error ?? "no response"}`;
+      status.classList.add("error");
+    }
+  } catch (err) {
+    status.textContent = `PR sweep failed: ${err instanceof Error ? err.message : String(err)}`;
+    status.classList.add("error");
+  } finally {
+    button.disabled = false;
+    setTimeout(() => {
+      status.textContent = "";
+      status.classList.remove("error");
+    }, 3000);
+  }
+}
+
 async function handleExport(): Promise<void> {
   const json = serializeSettings(await loadSettings());
   const url = URL.createObjectURL(
@@ -486,6 +520,8 @@ async function bootstrap(): Promise<void> {
     $<HTMLInputElement>("pr-pat").value = "";
     await refreshPatStatus();
   });
+
+  $("pr-run-now").addEventListener("click", handleRunSweepNow);
 
   document.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
     btn.addEventListener("click", () => {
