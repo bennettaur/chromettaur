@@ -128,8 +128,8 @@ describe("runPrStatusSweep reviewer grouping", () => {
   });
 });
 
-describe("runPrStatusSweep changes requested", () => {
-  it("puts my PR with changes requested into PR: Changes requested", async () => {
+describe("runPrStatusSweep needs attention", () => {
+  it("puts my PR with changes requested into PR: Needs attention", async () => {
     const fake = installChromeTabsFake({
       tabs: [{ id: 1, windowId: 1, url: PR_URL, groupId: -1 }],
     });
@@ -150,8 +150,47 @@ describe("runPrStatusSweep changes requested", () => {
     await runPrStatusSweep();
 
     expect(groupOf(fake, 1)).toMatchObject({
-      title: "PR: Changes requested",
+      title: "PR: Needs attention",
       color: "orange",
     });
+  });
+});
+
+describe("runPrStatusSweep unresolved threads", () => {
+  it("puts my PR with an unresolved review thread into PR: Needs attention", async () => {
+    const fake = installChromeTabsFake({
+      tabs: [{ id: 1, windowId: 1, url: PR_URL, groupId: -1 }],
+    });
+    enablePrStatus(fake.sync);
+    fake.local.data.githubPat = "pat";
+    stubGithub({
+      "/user": () => jsonResponse({ login: "me" }),
+      "/graphql": () =>
+        jsonResponse({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [
+                    {
+                      isResolved: false,
+                      comments: {
+                        nodes: [{ author: { __typename: "User", login: "yk" } }],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      "/pulls/7/reviews": () => jsonResponse([]),
+      "/pulls/7": () =>
+        jsonResponse({ state: "open", mergeable_state: "dirty", user: { login: "me" } }),
+    });
+
+    await runPrStatusSweep();
+
+    expect(groupOf(fake, 1)).toMatchObject({ title: "PR: Needs attention" });
   });
 });

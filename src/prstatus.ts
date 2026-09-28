@@ -1,6 +1,11 @@
 import { clearInFlight, markInFlight } from "./autogroup";
 import { ensureGroupForTab, extensionGroupTitles } from "./groups";
-import { GITHUB_API, githubGet, loadViewerLogin } from "./github";
+import {
+  GITHUB_API,
+  githubGet,
+  githubGraphql,
+  loadViewerLogin,
+} from "./github";
 import { loadGithubPat } from "./githubPat";
 import { loadSettings } from "./settings";
 import { addUserOverride, loadState, recordManaged } from "./state";
@@ -117,28 +122,105 @@ export function isReviewer(
 const VERDICT_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
 
 /**
- * True when any reviewer's latest verdict requests changes. Plain comments
- * don't change a verdict. Expects reviews oldest first, as GitHub lists them.
+ * Each reviewer's latest verdict. Plain comments don't change a verdict.
+ * Expects reviews oldest first, as GitHub lists them.
  */
-export function hasChangesRequested(reviews: PrReview[]): boolean {
+function latestVerdicts(reviews: PrReview[]): string[] {
   const latest = new Map<string, string>();
   for (const r of reviews) {
     if (r.user && VERDICT_STATES.has(r.state)) {
       latest.set(r.user.login.toLowerCase(), r.state);
     }
   }
-  return [...latest.values()].includes("CHANGES_REQUESTED");
+  return [...latest.values()];
+}
+
+export function hasChangesRequested(reviews: PrReview[]): boolean {
+  return latestVerdicts(reviews).includes("CHANGES_REQUESTED");
+}
+
+function isApproved(reviews: PrReview[]): boolean {
+  const verdicts = latestVerdicts(reviews);
+  return (
+    verdicts.includes("APPROVED") && !verdicts.includes("CHANGES_REQUESTED")
+  );
+}
+
+/** Approved and mergeable stays Ready: leftover threads don't block merging. */
+function isReadyToMerge(status: PrStatus, reviews: PrReview[]): boolean {
+  return status === "ready" && isApproved(reviews);
+}
+
+export interface ReviewThread {
+  isResolved: boolean;
+  startedBy: { __typename: string; login: string } | null;
+}
+
+/** Unresolved threads count until someone resolves them; bot threads never. */
+export function hasOpenThreads(threads: ReviewThread[]): boolean {
+  return threads.some(
+    (t) => !t.isResolved && t.startedBy?.__typename !== "Bot",
+  );
+}
+
+const REVIEW_THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          comments(first: 1) { nodes { author { __typename login } } }
+        }
+      }
+    }
+  }
+}`;
+
+interface ReviewThreadsData {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        nodes: {
+          isResolved: boolean;
+          comments: {
+            nodes: { author: { __typename: string; login: string } | null }[];
+          };
+        }[];
+      };
+    } | null;
+  } | null;
+}
+
+async function fetchReviewThreads(
+  c: PrCoords,
+  pat: string,
+): Promise<ReviewThread[]> {
+  const data = await githubGraphql<ReviewThreadsData>(
+    REVIEW_THREADS_QUERY,
+    { owner: c.owner, repo: c.repo, number: Number(c.number) },
+    pat,
+  );
+  const nodes = data.repository?.pullRequest?.reviewThreads.nodes ?? [];
+  return nodes.map((n) => ({
+    isResolved: n.isResolved,
+    startedBy: n.comments.nodes[0]?.author ?? null,
+  }));
 }
 
 export function resolvePrGroup(
   pr: PrApiResponse,
   reviews: PrReview[],
   viewer: string | null,
+  openThreads = false,
 ): PrStatus {
   const status = mapPrStatus(pr);
   if (status === "merged" || status === "closed") return status;
   if (viewer && sameLogin(pr.user?.login, viewer)) {
-    return hasChangesRequested(reviews) ? "changesRequested" : status;
+    if (hasChangesRequested(reviews)) return "needsAttention";
+    if (openThreads && !isReadyToMerge(status, reviews)) {
+      return "needsAttention";
+    }
+    return status;
   }
   return isReviewer(pr, reviews, viewer) ? "reviewer" : status;
 }
@@ -163,6 +245,15 @@ export async function fetchPrStatus(
     }
     const res = await githubGet(`${prUrl}/reviews?per_page=100`, pat);
     const reviews = (await res.json()) as PrReview[];
+    if (
+      pat &&
+      sameLogin(pr.user?.login, viewer) &&
+      !hasChangesRequested(reviews) &&
+      !isReadyToMerge(mapPrStatus(pr), reviews)
+    ) {
+      const threads = await fetchReviewThreads(c, pat);
+      return resolvePrGroup(pr, reviews, viewer, hasOpenThreads(threads));
+    }
     return resolvePrGroup(pr, reviews, viewer);
   } catch {
     return "unknown";

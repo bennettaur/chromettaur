@@ -3,6 +3,7 @@ import {
   extractPrCoords,
   fetchPrStatus,
   hasChangesRequested,
+  hasOpenThreads,
   isReviewer,
   mapPrStatus,
   prKey,
@@ -226,17 +227,44 @@ describe("hasChangesRequested", () => {
   });
 });
 
-describe("resolvePrGroup changes requested", () => {
+const thread = (isResolved: boolean, login = "a", typename = "User") => ({
+  isResolved,
+  startedBy: { __typename: typename, login },
+});
+
+describe("hasOpenThreads", () => {
+  it("is true for an unresolved thread a person started", () => {
+    expect(hasOpenThreads([thread(false)])).toBe(true);
+  });
+
+  it("ignores resolved threads", () => {
+    expect(hasOpenThreads([thread(true)])).toBe(false);
+  });
+
+  it("ignores unresolved threads a bot started", () => {
+    expect(hasOpenThreads([thread(false, "ws-compass", "Bot")])).toBe(false);
+  });
+
+  it("is true when one of several threads is open", () => {
+    expect(hasOpenThreads([thread(true), thread(false, "b")])).toBe(true);
+  });
+
+  it("is false with no threads", () => {
+    expect(hasOpenThreads([])).toBe(false);
+  });
+});
+
+describe("resolvePrGroup needs attention", () => {
   const mine = { state: "open" as const, mergeable_state: "blocked", user: { login: "me" } };
   const cr = [review("a", "CHANGES_REQUESTED")];
 
-  it("puts my PR with changes requested into changesRequested", () => {
-    expect(resolvePrGroup(mine, cr, "me")).toBe("changesRequested");
+  it("puts my PR with changes requested into needsAttention", () => {
+    expect(resolvePrGroup(mine, cr, "me")).toBe("needsAttention");
   });
 
   it("wins over draft", () => {
     expect(resolvePrGroup({ ...mine, draft: true }, cr, "me")).toBe(
-      "changesRequested",
+      "needsAttention",
     );
   });
 
@@ -256,6 +284,46 @@ describe("resolvePrGroup changes requested", () => {
   it("does not apply without a viewer login", () => {
     expect(resolvePrGroup(mine, cr, null)).toBe("blocked");
   });
+
+  it("puts my PR with an open thread into needsAttention", () => {
+    expect(resolvePrGroup(mine, [], "me", true)).toBe("needsAttention");
+  });
+
+  it("keeps my approved, mergeable PR in ready despite open threads", () => {
+    const clean = { ...mine, mergeable_state: "clean" };
+    expect(resolvePrGroup(clean, [review("a", "APPROVED")], "me", true)).toBe(
+      "ready",
+    );
+  });
+
+  it("still flags open threads on a mergeable PR nobody approved", () => {
+    const clean = { ...mine, mergeable_state: "clean" };
+    expect(resolvePrGroup(clean, [], "me", true)).toBe("needsAttention");
+  });
+
+  it("still flags open threads on an approved PR that isn't mergeable", () => {
+    expect(resolvePrGroup(mine, [review("a", "APPROVED")], "me", true)).toBe(
+      "needsAttention",
+    );
+  });
+
+  it("does not count an approval that a later request for changes replaced", () => {
+    const clean = { ...mine, mergeable_state: "clean" };
+    const reviews = [review("a", "APPROVED"), review("a", "CHANGES_REQUESTED")];
+    expect(resolvePrGroup(clean, reviews, "me", false)).toBe("needsAttention");
+  });
+
+  it("ignores open threads on someone else's PR", () => {
+    expect(resolvePrGroup({ ...mine, user: { login: "b" } }, [], "me", true)).toBe(
+      "blocked",
+    );
+  });
+
+  it("puts merged ahead of an open thread", () => {
+    expect(
+      resolvePrGroup({ ...mine, merged: true, state: "closed" }, [], "me", true),
+    ).toBe("merged");
+  });
 });
 
 describe("prKey", () => {
@@ -272,6 +340,95 @@ describe("fetchPrStatus with a viewer", () => {
   });
   const coords = { owner: "org", repo: "repo", number: "7" };
 
+  const myCleanPr = () =>
+    jsonResponse({ state: "open", mergeable_state: "clean", user: { login: "me" } });
+  const threadsResponse = (nodes: object[]) =>
+    jsonResponse({
+      data: { repository: { pullRequest: { reviewThreads: { nodes } } } },
+    });
+  const gqlThread = (isResolved: boolean, typename = "User") => ({
+    isResolved,
+    comments: { nodes: [{ author: { __typename: typename, login: "a" } }] },
+  });
+
+  it("reports needs attention for my PR with an unresolved thread", async () => {
+    stubGithub({
+      "/graphql": () => threadsResponse([gqlThread(false)]),
+      "/pulls/7/reviews": () => jsonResponse([]),
+      "/pulls/7": myCleanPr,
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("needsAttention");
+  });
+
+  it("keeps my PR's status when every thread is resolved or a bot's", async () => {
+    stubGithub({
+      "/graphql": () =>
+        threadsResponse([gqlThread(true), gqlThread(false, "Bot")]),
+      "/pulls/7/reviews": () => jsonResponse([]),
+      "/pulls/7": myCleanPr,
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("ready");
+  });
+
+  it("skips the thread lookup when changes are already requested", async () => {
+    const fetchMock = stubGithub({
+      "/graphql": () => threadsResponse([]),
+      "/pulls/7/reviews": () =>
+        jsonResponse([{ user: { login: "a" }, state: "CHANGES_REQUESTED" }]),
+      "/pulls/7": myCleanPr,
+    });
+    await fetchPrStatus(coords, "pat", "me");
+    expect(fetchMock.mock.calls.some(([u]) => u.includes("/graphql"))).toBe(false);
+  });
+
+  it("skips the thread lookup for my approved, mergeable PR", async () => {
+    const fetchMock = stubGithub({
+      "/graphql": () => threadsResponse([gqlThread(false)]),
+      "/pulls/7/reviews": () =>
+        jsonResponse([{ user: { login: "a" }, state: "APPROVED" }]),
+      "/pulls/7": myCleanPr,
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("ready");
+    expect(fetchMock.mock.calls.some(([u]) => u.includes("/graphql"))).toBe(false);
+  });
+
+  it("never looks up threads on someone else's PR", async () => {
+    const fetchMock = stubGithub({
+      "/graphql": () => threadsResponse([gqlThread(false)]),
+      "/pulls/7/reviews": () => jsonResponse([]),
+      "/pulls/7": () =>
+        jsonResponse({ state: "open", mergeable_state: "clean", user: { login: "b" }, requested_reviewers: [] }),
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("ready");
+    expect(fetchMock.mock.calls.some(([u]) => u.includes("/graphql"))).toBe(false);
+  });
+
+  it("returns unknown when GraphQL answers with errors", async () => {
+    stubGithub({
+      "/graphql": () => jsonResponse({ errors: [{ message: "Resource not accessible" }] }),
+      "/pulls/7/reviews": () => jsonResponse([]),
+      "/pulls/7": myCleanPr,
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("unknown");
+  });
+
+  it("sends the thread query as an authenticated POST", async () => {
+    const fetchMock = stubGithub({
+      "/graphql": () => threadsResponse([]),
+      "/pulls/7/reviews": () => jsonResponse([]),
+      "/pulls/7": myCleanPr,
+    });
+    await fetchPrStatus(coords, "pat", "me");
+    const [, init] = fetchMock.mock.calls.find(([u]) => u.includes("/graphql"))!;
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer pat");
+    expect(JSON.parse(init?.body as string).variables).toEqual({
+      owner: "org",
+      repo: "repo",
+      number: 7,
+    });
+  });
+
   it("checks reviews on my own PR and reports changes requested", async () => {
     stubGithub({
       "/pulls/7/reviews": () =>
@@ -279,7 +436,7 @@ describe("fetchPrStatus with a viewer", () => {
       "/pulls/7": () =>
         jsonResponse({ state: "open", mergeable_state: "clean", user: { login: "me" } }),
     });
-    expect(await fetchPrStatus(coords, "pat", "me")).toBe("changesRequested");
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("needsAttention");
   });
 
   it("skips the reviews call when my review is requested", async () => {

@@ -166,10 +166,10 @@ describe("reviewer group settings", () => {
       },
     } as never);
     expect(merged.prStatus.groupTitles.reviewer).toBe("PR: Reviewer");
-    expect(merged.prStatus.groupTitles.changesRequested).toBe(
-      "PR: Changes requested",
+    expect(merged.prStatus.groupTitles.needsAttention).toBe(
+      "PR: Needs attention",
     );
-    expect(merged.prStatus.groupColors.changesRequested).toBe("orange");
+    expect(merged.prStatus.groupColors.needsAttention).toBe("orange");
     expect(merged.prStatus.groupColors.reviewer).toBe("yellow");
     expect(merged.prStatus.groupTitles.draft).toBe("D");
   });

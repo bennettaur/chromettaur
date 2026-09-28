@@ -33,21 +33,51 @@ export function describeFailure(err: unknown): string {
   return "network error";
 }
 
-export async function githubGet(
-  url: string,
-  pat: string | undefined,
-): Promise<Response> {
+function githubHeaders(pat: string | undefined): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (pat) headers.Authorization = `Bearer ${pat}`;
+  return headers;
+}
+
+export async function githubGet(
+  url: string,
+  pat: string | undefined,
+): Promise<Response> {
   const res = await fetch(url, {
-    headers,
+    headers: githubHeaders(pat),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw GithubRequestError.fromResponse(res, url);
   return res;
+}
+
+/** GraphQL reports most failures in a 200 body, so those throw too. */
+export async function githubGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  pat: string,
+): Promise<T> {
+  const url = `${GITHUB_API}/graphql`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: githubHeaders(pat),
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw GithubRequestError.fromResponse(res, url);
+  const body = (await res.json()) as {
+    data?: T;
+    errors?: { message: string }[];
+  };
+  if (body.errors?.length || !body.data) {
+    throw new Error(
+      `GitHub GraphQL: ${body.errors?.[0]?.message ?? "no data returned"}`,
+    );
+  }
+  return body.data;
 }
 
 export async function fetchViewerLogin(pat: string): Promise<string> {

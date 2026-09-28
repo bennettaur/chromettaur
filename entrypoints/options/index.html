@@ -189,8 +189,10 @@
           <code>PR: Closed</code> (pink),
           <code>PR: Reviewer</code> (yellow) for PRs whose review is requested
           from you or that you have reviewed, and
-          <code>PR: Changes requested</code> (orange) for your own PRs where a
-          reviewer's latest verdict requests changes. Those two win over
+          <code>PR: Needs attention</code> (orange) for your own PRs where a
+          reviewer's latest verdict requests changes, or a review thread a
+          person started is still unresolved (unless the PR is approved and
+          mergeable, which stays Ready). Those two win over
           Draft / Ready / Blocked; Merged and Closed win over both. Both need
           the token below.
           A PR is "blocked" when GitHub reports
