@@ -52,6 +52,24 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+// Sign-in and SSO pages GitHub sends a tab to when the browser session lapses.
+const GITHUB_AUTH_URL_RE =
+  /^https:\/\/github\.com\/(?:login|session|sessions\/[^?#]+|(?:orgs|enterprises)\/[^/?#]+\/sso)(?:[/?#]|$)/;
+
+function isGithubAuthUrl(url: string): boolean {
+  return GITHUB_AUTH_URL_RE.test(url);
+}
+
+/** Tracked tabs parked on a GitHub sign-in page still hold their PR. */
+async function listTrackedAuthTabs(map: TabMap): Promise<OpenPrTab[]> {
+  const tabs = await chrome.tabs.query({ url: "https://github.com/*" });
+  return tabs.flatMap((t) => {
+    const key = t.id == null ? undefined : map[String(t.id)];
+    if (t.id == null || !key || !t.url || !isGithubAuthUrl(t.url)) return [];
+    return [{ tabId: t.id, key, url: t.url, title: t.title ?? t.url }];
+  });
+}
+
 async function listOpenPrTabs(): Promise<OpenPrTab[]> {
   const tabs = await chrome.tabs.query({
     url: "https://github.com/*/*/pull/*",
@@ -92,8 +110,11 @@ async function runAutoOpenNow(now: number): Promise<void> {
     return;
   }
 
-  const openTabs = await listOpenPrTabs();
   const tabMap = await loadTabMap();
+  const openTabs = [
+    ...(await listOpenPrTabs()),
+    ...(await listTrackedAuthTabs(tabMap)),
+  ];
   for (const [id, key] of Object.entries(tabMap)) {
     if (!openTabs.some((t) => t.tabId === Number(id) && t.key === key)) {
       delete tabMap[id];
@@ -226,7 +247,7 @@ export function handleTrackedTabNavigated(
 ): Promise<void> {
   return serialized(async () => {
     const key = (await loadTabMap())[String(tabId)];
-    if (!key) return;
+    if (!key || isGithubAuthUrl(url)) return;
     const coords = extractPrCoords(url);
     if (coords && prKey(coords) === key) return;
     await untrack(tabId, true);

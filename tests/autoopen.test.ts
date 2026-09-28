@@ -165,6 +165,41 @@ describe("runAutoOpen", () => {
     expect(fake.chrome.tabs.create).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps tracking a tab GitHub sends to org SSO, and closes it after merge", async () => {
+    const fake = setup();
+    stubSearch([1]);
+    await runAutoOpen(NOW);
+    const opened = fake.tabs.find((t) => t.url === url(1))!;
+    opened.url = `https://github.com/orgs/org/sso?return_to=${encodeURIComponent("/org/r/pull/1")}`;
+    await handleTrackedTabNavigated(opened.id, opened.url);
+
+    stubSearch([1]);
+    await runAutoOpen(NOW + 1);
+    expect(fake.chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect((await loadAutoOpenState()).dismissed).toEqual([]);
+
+    opened.url = url(1);
+    await handleTrackedTabNavigated(opened.id, opened.url);
+    stubSearch([], { 1: { merged: true, state: "closed" } });
+    await runAutoOpen(NOW + 2);
+    expect(fake.tabs.some((t) => t.id === opened.id)).toBe(false);
+  });
+
+  it("keeps tracking a tab sent to the GitHub login page", async () => {
+    const fake = setup();
+    stubSearch([1]);
+    await runAutoOpen(NOW);
+    const opened = fake.tabs.find((t) => t.url === url(1))!;
+    opened.url = "https://github.com/login?return_to=%2Forg%2Fr%2Fpull%2F1";
+    await handleTrackedTabNavigated(opened.id, opened.url);
+
+    stubSearch([1]);
+    await runAutoOpen(NOW + 1);
+
+    expect(fake.chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect((await loadAutoOpenState()).dismissed).toEqual([]);
+  });
+
   it("treats navigating an auto-opened tab off its PR as dismissing it", async () => {
     const fake = setup();
     stubSearch([1]);
