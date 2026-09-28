@@ -25,6 +25,14 @@ describe("fetchWantedPrs", () => {
     expect(qs).toEqual(MY_PR_QUERIES);
   });
 
+  it("only asks for review requests made to me, not to my teams", () => {
+    // Bare `review-requested:` also matches requests to any team I'm on.
+    expect(MY_PR_QUERIES[0]).toContain(" user-review-requested:@me");
+    expect(
+      MY_PR_QUERIES.some((q) => /(^|\s)review-requested:/.test(q)),
+    ).toBe(false);
+  });
+
   it("asks for the most recently updated PRs first", async () => {
     const fetchMock = stubGithub({
       "/search/issues": () => jsonResponse({ items: [] }),

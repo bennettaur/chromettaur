@@ -3,7 +3,8 @@ import { extractPrCoords, prKey, type PrCoords } from "./prstatus";
 
 // Ordered by priority: the open-tab cap favours review requests.
 export const MY_PR_QUERIES = [
-  "is:pr is:open archived:false review-requested:@me",
+  // `review-requested:` would also match requests to any team I am on.
+  "is:pr is:open archived:false user-review-requested:@me",
   "is:pr is:open archived:false reviewed-by:@me -author:@me",
   "is:pr is:open archived:false author:@me",
 ];
