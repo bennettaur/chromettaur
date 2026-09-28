@@ -1,6 +1,10 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { GithubRequestError } from "../src/github";
-import { fetchWantedPrs, MY_PR_QUERIES } from "../src/myPrs";
+import {
+  fetchWantedPrs,
+  IncompleteSearchError,
+  MY_PR_QUERIES,
+} from "../src/myPrs";
 import { jsonResponse, stubGithub } from "./githubStub";
 
 const item = (path: string) => ({ html_url: `https://github.com/${path}` });
@@ -19,6 +23,28 @@ describe("fetchWantedPrs", () => {
       new URL(u).searchParams.get("q"),
     );
     expect(qs).toEqual(MY_PR_QUERIES);
+  });
+
+  it("asks for the most recently updated PRs first", async () => {
+    const fetchMock = stubGithub({
+      "/search/issues": () => jsonResponse({ items: [] }),
+    });
+    await fetchWantedPrs("pat");
+    for (const [u] of fetchMock.mock.calls) {
+      const params = new URL(u).searchParams;
+      expect(params.get("sort")).toBe("updated");
+      expect(params.get("order")).toBe("desc");
+    }
+  });
+
+  it("fails when GitHub reports incomplete results", async () => {
+    stubGithub({
+      "/search/issues": () =>
+        jsonResponse({ incomplete_results: true, items: [] }),
+    });
+    await expect(fetchWantedPrs("pat")).rejects.toBeInstanceOf(
+      IncompleteSearchError,
+    );
   });
 
   it("keeps query order and drops duplicates across queries", async () => {

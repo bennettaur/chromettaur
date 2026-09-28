@@ -75,7 +75,7 @@ function render(): void {
 
   // Auto-open
   $<HTMLInputElement>("ao-enabled").checked = working.autoOpen.enabled;
-  $<HTMLInputElement>("ao-max").value = String(working.autoOpen.maxPerPoll);
+  $<HTMLInputElement>("ao-max").value = String(working.autoOpen.maxOpen);
 
   // Repo switcher
   renderOwners();
@@ -308,7 +308,7 @@ function collectFromInputs(): void {
     $<HTMLInputElement>("pr-poll").value,
   );
   working.autoOpen.enabled = $<HTMLInputElement>("ao-enabled").checked;
-  working.autoOpen.maxPerPoll = Number($<HTMLInputElement>("ao-max").value);
+  working.autoOpen.maxOpen = Number($<HTMLInputElement>("ao-max").value);
 }
 
 function validate(): string | null {
@@ -350,9 +350,9 @@ function validate(): string | null {
   ) {
     return "PR status poll interval must be ≥ 0.5 (Chrome floor).";
   }
-  const max = working.autoOpen.maxPerPoll;
+  const max = working.autoOpen.maxOpen;
   if (!Number.isInteger(max) || max < 1 || max > 50) {
-    return "Max auto-opened tabs per poll must be a whole number from 1 to 50.";
+    return "Max auto-opened tabs open at once must be a whole number from 1 to 50.";
   }
   for (const owner of working.repoSwitcher.owners) {
     if (owner.trim() === "") continue;

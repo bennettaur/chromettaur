@@ -17,7 +17,7 @@ function tab(tabId: number, n: number): OpenPrTab {
     title: `#${n}`,
   };
 }
-const base = { openTabs: [], autoOpened: {}, dismissed: [], maxPerPoll: 10 };
+const base = { openTabs: [], autoOpened: {}, dismissed: [], maxOpen: 10 };
 
 describe("planAutoOpen", () => {
   it("opens wanted PRs that have no tab", () => {
@@ -44,13 +44,37 @@ describe("planAutoOpen", () => {
     expect(plan.dismissed).toEqual([]);
   });
 
-  it("opens at most maxPerPoll, in wanted order", () => {
+  it("opens at most maxOpen, in wanted order", () => {
     const plan = planAutoOpen({
       ...base,
       wanted: [1, 2, 3].map(wanted),
-      maxPerPoll: 2,
+      maxOpen: 2,
     });
     expect(plan.toOpen.map((w) => w.key)).toEqual(["org/r#1", "org/r#2"]);
+  });
+
+  it("counts auto-opened tabs already open against maxOpen", () => {
+    const plan = planAutoOpen({
+      ...base,
+      wanted: [1, 2, 3, 4].map(wanted),
+      openTabs: [tab(8, 1), tab(9, 2)],
+      autoOpened: {
+        "org/r#1": { openedAt: 1, url: wanted(1).url },
+        "org/r#2": { openedAt: 1, url: wanted(2).url },
+      },
+      maxOpen: 3,
+    });
+    expect(plan.toOpen.map((w) => w.key)).toEqual(["org/r#3"]);
+  });
+
+  it("does not count PR tabs I opened myself against maxOpen", () => {
+    const plan = planAutoOpen({
+      ...base,
+      wanted: [1, 2].map(wanted),
+      openTabs: [tab(8, 1)],
+      maxOpen: 1,
+    });
+    expect(plan.toOpen.map((w) => w.key)).toEqual(["org/r#2"]);
   });
 
   it("forgets auto-opened PRs whose tabs are gone", () => {

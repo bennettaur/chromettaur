@@ -243,8 +243,10 @@
         <p class="hint">
           Each poll, finds open PRs requesting your review, PRs you have
           reviewed, and PRs you authored, and opens any that aren't open yet
-          in the background. Tabs it opened close when their PR is merged or
-          closed and appear under “Recently auto-closed”. Closing one, or
+          in the background, most recently updated first. The limit below
+          counts every tab it has open, not just new ones. Tabs it opened
+          close when their PR is merged or closed and appear under “Recently
+          auto-closed”. Closing one, or
           navigating it away from the PR, stops it reopening. Needs PR status
           grouping on and a GitHub token. Only repos the token can read are
           searched.
@@ -255,7 +257,7 @@
         </label>
         <div class="grid">
           <label>
-            <span>Max tabs opened per poll (1–50)</span>
+            <span>Max auto-opened tabs open at once (1–50)</span>
             <input type="number" id="ao-max" min="1" max="50" step="1" />
           </label>
         </div>

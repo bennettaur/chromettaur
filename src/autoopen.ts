@@ -1,7 +1,11 @@
 import { planAutoOpen, type AutoOpened, type OpenPrTab } from "./autoOpenPlan";
 import { describeFailure } from "./github";
 import { loadGithubPat } from "./githubPat";
-import { fetchWantedPrs, type WantedPr } from "./myPrs";
+import {
+  fetchWantedPrs,
+  IncompleteSearchError,
+  type WantedPr,
+} from "./myPrs";
 import { extractPrCoords, fetchPrStatus, prKey } from "./prstatus";
 import { loadSettings } from "./settings";
 import { pushRecentlyClosed } from "./state";
@@ -105,7 +109,13 @@ async function runAutoOpenNow(now: number): Promise<void> {
     // A partial answer could close tabs for PRs that are still wanted.
     await saveAutoOpenState({
       ...state,
-      lastError: { message: describeFailure(err), at: now },
+      lastError: {
+        message:
+          err instanceof IncompleteSearchError
+            ? err.message
+            : describeFailure(err),
+        at: now,
+      },
     });
     return;
   }
@@ -126,7 +136,7 @@ async function runAutoOpenNow(now: number): Promise<void> {
     openTabs,
     autoOpened: state.autoOpened,
     dismissed: state.dismissed,
-    maxPerPoll: settings.autoOpen.maxPerPoll,
+    maxOpen: settings.autoOpen.maxOpen,
   });
   const autoOpened = plan.autoOpened;
   relinkUnmappedTabs(tabMap, openTabs, autoOpened);

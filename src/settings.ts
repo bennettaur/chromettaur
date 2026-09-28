@@ -72,7 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   autoOpen: {
     enabled: false,
-    maxPerPoll: 10,
+    maxOpen: 10,
   },
   repoSwitcher: {
     owners: ["wealthsimple", "bennettaur"],

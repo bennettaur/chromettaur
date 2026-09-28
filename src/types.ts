@@ -101,7 +101,8 @@ export interface PrStatusSettings {
 
 export interface AutoOpenSettings {
   enabled: boolean;
-  maxPerPoll: number;
+  /** Cap on auto-opened tabs open at once, not per poll. */
+  maxOpen: number;
 }
 
 export interface RepoSwitcherSettings {

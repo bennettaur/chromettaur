@@ -19,6 +19,7 @@ function setup(
     tabs?: FakeTab[];
     lastFocusedWindowId?: number | null;
     autoOpen?: boolean;
+    maxOpen?: number;
   } = {},
 ) {
   const fake = installChromeTabsFake({
@@ -28,6 +29,7 @@ function setup(
   const settings = structuredClone(DEFAULT_SETTINGS);
   settings.prStatus.enabled = true;
   settings.autoOpen.enabled = opts.autoOpen ?? true;
+  if (opts.maxOpen !== undefined) settings.autoOpen.maxOpen = opts.maxOpen;
   fake.sync.data.settings = settings;
   fake.local.data.githubPat = "pat";
   return fake;
@@ -71,6 +73,28 @@ describe("runAutoOpen", () => {
       active: false,
     });
     expect((await loadAutoOpenState()).autoOpened).toHaveProperty(["org/r#1"]);
+  });
+
+  it("stops opening once maxOpen auto-opened tabs are open, across polls", async () => {
+    const fake = setup({ maxOpen: 1 });
+    stubSearch([1, 2]);
+    await runAutoOpen(NOW);
+    stubSearch([1, 2]);
+    await runAutoOpen(NOW + 1);
+    expect(fake.chrome.tabs.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens and closes nothing on incomplete search results, and says why", async () => {
+    const fake = setup();
+    stubGithub({
+      "/search/issues": () =>
+        jsonResponse({ incomplete_results: true, items: [{ html_url: url(1) }] }),
+    });
+    await runAutoOpen(NOW);
+    expect(fake.chrome.tabs.create).not.toHaveBeenCalled();
+    expect((await loadAutoOpenState()).lastError?.message).toBe(
+      "GitHub search returned incomplete results",
+    );
   });
 
   it("opens nothing without a normal window, and remembers nothing", async () => {

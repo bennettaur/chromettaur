@@ -182,13 +182,13 @@ describe("autoOpen settings", () => {
   it("defaults to off with a cap of 10", () => {
     expect(mergeWithDefaults({}).autoOpen).toEqual({
       enabled: false,
-      maxPerPoll: 10,
+      maxOpen: 10,
     });
   });
 
   it("round-trips", () => {
     const settings = structuredClone(DEFAULT_SETTINGS);
-    settings.autoOpen = { enabled: true, maxPerPoll: 3 };
+    settings.autoOpen = { enabled: true, maxOpen: 3 };
     expect(parseSettingsImport(serializeSettings(settings))).toEqual(settings);
   });
 
