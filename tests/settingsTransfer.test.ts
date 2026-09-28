@@ -177,3 +177,24 @@ describe("reviewer group settings", () => {
     expect(parseSettingsImport(serializeSettings(settings))).toEqual(settings);
   });
 });
+
+describe("autoOpen settings", () => {
+  it("defaults to off with a cap of 10", () => {
+    expect(mergeWithDefaults({}).autoOpen).toEqual({
+      enabled: false,
+      maxPerPoll: 10,
+    });
+  });
+
+  it("round-trips", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.autoOpen = { enabled: true, maxPerPoll: 3 };
+    expect(parseSettingsImport(serializeSettings(settings))).toEqual(settings);
+  });
+
+  it("rejects a non-boolean enabled", () => {
+    expect(() =>
+      parseSettingsImport(exportWith({ autoOpen: { enabled: "yes" } })),
+    ).toThrow('"autoOpen.enabled" must be true or false.');
+  });
+});

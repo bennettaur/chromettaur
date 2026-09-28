@@ -238,6 +238,28 @@
           <span id="pr-pat-status" class="hint" style="margin-left: 8px"></span>
         </div>
         <div id="pr-run-status" class="hint" aria-live="polite"></div>
+
+        <h3>Auto-open my PRs</h3>
+        <p class="hint">
+          Each poll, finds open PRs requesting your review, PRs you have
+          reviewed, and PRs you authored, and opens any that aren't open yet
+          in the background. Tabs it opened close when their PR is merged or
+          closed and appear under “Recently auto-closed”. Closing one, or
+          navigating it away from the PR, stops it reopening. Needs PR status
+          grouping on and a GitHub token. Only repos the token can read are
+          searched.
+        </p>
+        <label class="row">
+          <input type="checkbox" id="ao-enabled" />
+          <span>Auto-open my PRs</span>
+        </label>
+        <div class="grid">
+          <label>
+            <span>Max tabs opened per poll (1–50)</span>
+            <input type="number" id="ao-max" min="1" max="50" step="1" />
+          </label>
+        </div>
+        <div id="ao-status" class="hint" aria-live="polite"></div>
       </section>
 
       <section id="section-reposwitcher">

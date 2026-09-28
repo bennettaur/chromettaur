@@ -99,6 +99,11 @@ export interface PrStatusSettings {
   groupTitles: Record<Exclude<PrStatus, "unknown">, string>;
 }
 
+export interface AutoOpenSettings {
+  enabled: boolean;
+  maxPerPoll: number;
+}
+
 export interface RepoSwitcherSettings {
   /** GitHub orgs/users whose repos the repo switcher lists. */
   owners: string[];
@@ -109,6 +114,7 @@ export interface Settings {
   uniqueness: UniquenessSettings;
   autoGroup: AutoGroupSettings;
   prStatus: PrStatusSettings;
+  autoOpen: AutoOpenSettings;
   repoSwitcher: RepoSwitcherSettings;
 }
 

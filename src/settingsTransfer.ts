@@ -132,6 +132,7 @@ export function parseSettingsImport(text: string): Settings {
   const uniqueness = readOptionalSection(settings, "uniqueness");
   const autoGroup = readOptionalSection(settings, "autoGroup");
   const prStatus = readOptionalSection(settings, "prStatus");
+  const autoOpen = readOptionalSection(settings, "autoOpen");
   const repoSwitcher = readOptionalSection(settings, "repoSwitcher");
 
   assertBooleansIfPresent(autoClose, "autoClose", [
@@ -146,6 +147,7 @@ export function parseSettingsImport(text: string): Settings {
     "respectUserOverride",
   ]);
   assertBooleansIfPresent(prStatus, "prStatus", ["enabled"]);
+  assertBooleansIfPresent(autoOpen, "autoOpen", ["enabled"]);
 
   const action = autoClose?.action;
   if (action !== undefined && action !== "close" && action !== "discard") {

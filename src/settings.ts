@@ -70,6 +70,10 @@ export const DEFAULT_SETTINGS: Settings = {
       reviewer: "PR: Reviewer",
     },
   },
+  autoOpen: {
+    enabled: false,
+    maxPerPoll: 10,
+  },
   repoSwitcher: {
     owners: ["wealthsimple", "bennettaur"],
   },
@@ -95,6 +99,7 @@ export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settin
         ...stored.prStatus?.groupTitles,
       },
     },
+    autoOpen: { ...DEFAULT_SETTINGS.autoOpen, ...stored.autoOpen },
     repoSwitcher: { ...DEFAULT_SETTINGS.repoSwitcher, ...stored.repoSwitcher },
   });
 }
