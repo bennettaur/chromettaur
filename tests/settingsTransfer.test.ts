@@ -198,3 +198,16 @@ describe("autoOpen settings", () => {
     ).toThrow('"autoOpen.enabled" must be true or false.');
   });
 });
+
+describe("PR status defaults", () => {
+  it("polls every 2 minutes", () => {
+    expect(mergeWithDefaults({}).prStatus.pollMinutes).toBe(2);
+  });
+
+  it("keeps a poll interval the user already saved", () => {
+    const merged = mergeWithDefaults({
+      prStatus: { ...DEFAULT_SETTINGS.prStatus, pollMinutes: 5 },
+    });
+    expect(merged.prStatus.pollMinutes).toBe(5);
+  });
+});

@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   prStatus: {
     enabled: false,
-    pollMinutes: 5,
+    pollMinutes: 2,
     groupColors: {
       draft: "grey",
       ready: "green",
