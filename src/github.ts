@@ -54,3 +54,25 @@ export async function fetchViewerLogin(pat: string): Promise<string> {
   const res = await githubGet(`${GITHUB_API}/user`, pat);
   return ((await res.json()) as { login: string }).login;
 }
+
+const VIEWER_KEY = "githubViewerLogin";
+
+/**
+ * Login of the PAT's owner, cached until the PAT is saved or cleared. Null
+ * without a PAT; throws when GitHub can't be reached.
+ */
+export async function loadViewerLogin(
+  pat: string | undefined,
+): Promise<string | null> {
+  if (!pat) return null;
+  const r = await chrome.storage.local.get(VIEWER_KEY);
+  const cached = r[VIEWER_KEY];
+  if (typeof cached === "string") return cached;
+  const login = await fetchViewerLogin(pat);
+  await chrome.storage.local.set({ [VIEWER_KEY]: login });
+  return login;
+}
+
+export async function forgetViewerLogin(): Promise<void> {
+  await chrome.storage.local.remove(VIEWER_KEY);
+}

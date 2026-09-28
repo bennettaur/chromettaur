@@ -150,3 +150,30 @@ describe("parseSettingsImport rejects", () => {
     ).toThrow('"autoGroup.rules" contains an invalid rule');
   });
 });
+
+describe("reviewer group settings", () => {
+  it("fills reviewer defaults into settings stored before it existed", () => {
+    const merged = mergeWithDefaults({
+      prStatus: {
+        ...DEFAULT_SETTINGS.prStatus,
+        groupTitles: {
+          draft: "D",
+          ready: "R",
+          blocked: "B",
+          merged: "M",
+          closed: "C",
+        },
+      },
+    } as never);
+    expect(merged.prStatus.groupTitles.reviewer).toBe("PR: Reviewer");
+    expect(merged.prStatus.groupColors.reviewer).toBe("yellow");
+    expect(merged.prStatus.groupTitles.draft).toBe("D");
+  });
+
+  it("round-trips a customised reviewer group", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.prStatus.groupTitles.reviewer = "Review me";
+    settings.prStatus.groupColors.reviewer = "orange";
+    expect(parseSettingsImport(serializeSettings(settings))).toEqual(settings);
+  });
+});

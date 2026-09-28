@@ -80,3 +80,50 @@ describe("runPrStatusSweep after a Chrome restart", () => {
     expect(groupOf(fake, 1)).toMatchObject({ id: 50, title: "Sprint" });
   });
 });
+
+describe("runPrStatusSweep reviewer grouping", () => {
+  it("puts a PR requesting my review into PR: Reviewer", async () => {
+    const fake = installChromeTabsFake({
+      tabs: [{ id: 1, windowId: 1, url: PR_URL, groupId: -1 }],
+    });
+    enablePrStatus(fake.sync);
+    fake.local.data.githubPat = "pat";
+    const fetchMock = stubGithub({
+      "/user": () => jsonResponse({ login: "me" }),
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          mergeable_state: "blocked",
+          user: { login: "author" },
+          requested_reviewers: [{ login: "me" }],
+        }),
+    });
+
+    await runPrStatusSweep();
+
+    expect(groupOf(fake, 1)).toMatchObject({
+      title: "PR: Reviewer",
+      color: "yellow",
+    });
+    expect(
+      fetchMock.mock.calls.filter(([u]) => u.includes("/pulls/7")),
+    ).toHaveLength(1);
+  });
+
+  it("moves nothing when the viewer login can't be fetched", async () => {
+    const fake = installChromeTabsFake({
+      tabs: [{ id: 1, windowId: 1, url: PR_URL, groupId: -1 }],
+    });
+    enablePrStatus(fake.sync);
+    fake.local.data.githubPat = "pat";
+    stubGithub({
+      "/user": () => jsonResponse({}, 503),
+      "/pulls/7": () =>
+        jsonResponse({ state: "open", mergeable_state: "clean" }),
+    });
+
+    await runPrStatusSweep();
+
+    expect(fake.tabs[0].groupId).toBe(-1);
+  });
+});

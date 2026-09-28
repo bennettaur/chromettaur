@@ -59,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
       blocked: "red",
       merged: "purple",
       closed: "pink",
+      reviewer: "yellow",
     },
     groupTitles: {
       draft: "PR: Draft",
@@ -66,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
       blocked: "PR: Blocked",
       merged: "PR: Merged",
       closed: "PR: Closed",
+      reviewer: "PR: Reviewer",
     },
   },
   repoSwitcher: {

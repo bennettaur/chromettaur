@@ -1,5 +1,12 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { extractPrCoords, fetchPrStatus, mapPrStatus } from "../src/prstatus";
+import {
+  extractPrCoords,
+  fetchPrStatus,
+  isReviewer,
+  mapPrStatus,
+  prKey,
+  resolvePrGroup,
+} from "../src/prstatus";
 import { jsonResponse, stubGithub } from "./githubStub";
 
 describe("extractPrCoords", () => {
@@ -114,5 +121,112 @@ describe("fetchPrStatus", () => {
     });
     await fetchPrStatus(coords, "pat");
     expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("resolvePrGroup", () => {
+  const open = { state: "open" as const, mergeable_state: "blocked" };
+
+  it("is reviewer when my review is requested", () => {
+    const pr = {
+      ...open,
+      user: { login: "a" },
+      requested_reviewers: [{ login: "Me" }],
+    };
+    expect(resolvePrGroup(pr, [], "me")).toBe("reviewer");
+  });
+
+  it("is reviewer when I already reviewed", () => {
+    expect(resolvePrGroup({ ...open, user: { login: "a" } }, ["me"], "me")).toBe(
+      "reviewer",
+    );
+  });
+
+  it("never marks my own PR as reviewer", () => {
+    const pr = {
+      ...open,
+      user: { login: "me" },
+      requested_reviewers: [{ login: "me" }],
+    };
+    expect(resolvePrGroup(pr, ["me"], "me")).toBe("blocked");
+  });
+
+  it("puts merged and closed ahead of reviewer", () => {
+    const req = { user: { login: "a" }, requested_reviewers: [{ login: "me" }] };
+    expect(
+      resolvePrGroup({ ...req, merged: true, state: "closed" }, [], "me"),
+    ).toBe("merged");
+    expect(resolvePrGroup({ ...req, state: "closed" }, [], "me")).toBe("closed");
+  });
+
+  it("falls back to status without a viewer login", () => {
+    const pr = {
+      ...open,
+      user: { login: "a" },
+      requested_reviewers: [{ login: "me" }],
+    };
+    expect(resolvePrGroup(pr, ["me"], null)).toBe("blocked");
+  });
+
+  it("ignores team review requests", () => {
+    const pr = { ...open, user: { login: "a" }, requested_reviewers: [] };
+    expect(isReviewer(pr, [], "me")).toBe(false);
+  });
+});
+
+describe("prKey", () => {
+  it("ignores owner/repo case", () => {
+    expect(prKey({ owner: "Org", repo: "Repo", number: "7" })).toBe(
+      "org/repo#7",
+    );
+  });
+});
+
+describe("fetchPrStatus with a viewer", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const coords = { owner: "org", repo: "repo", number: "7" };
+
+  it("skips the reviews call when my review is requested", async () => {
+    const fetchMock = stubGithub({
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          user: { login: "a" },
+          requested_reviewers: [{ login: "me" }],
+        }),
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("reviewer");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks reviews when not requested", async () => {
+    stubGithub({
+      "/pulls/7/reviews": () =>
+        jsonResponse([{ user: { login: "me" } }, { user: null }]),
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          mergeable_state: "clean",
+          user: { login: "a" },
+          requested_reviewers: [],
+        }),
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("reviewer");
+  });
+
+  it("returns unknown when the reviews call fails", async () => {
+    stubGithub({
+      "/pulls/7/reviews": () => jsonResponse({}, 502),
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          mergeable_state: "clean",
+          user: { login: "a" },
+          requested_reviewers: [],
+        }),
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("unknown");
   });
 });
