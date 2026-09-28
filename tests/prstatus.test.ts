@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { extractPrCoords, mapPrStatus } from "../src/prstatus";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { extractPrCoords, fetchPrStatus, mapPrStatus } from "../src/prstatus";
+import { jsonResponse, stubGithub } from "./githubStub";
 
 describe("extractPrCoords", () => {
   it("parses owner/repo/number from a PR URL", () => {
@@ -91,5 +92,27 @@ describe("mapPrStatus", () => {
     expect(
       mapPrStatus({ merged: true, draft: true, state: "closed" }),
     ).toBe("merged");
+  });
+});
+
+describe("fetchPrStatus", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const coords = { owner: "org", repo: "repo", number: "7" };
+
+  it("returns unknown when GitHub answers with an error", async () => {
+    stubGithub({ "/pulls/7": () => jsonResponse({}, 500) });
+    expect(await fetchPrStatus(coords, "pat")).toBe("unknown");
+  });
+
+  it("sends requests with a timeout signal", async () => {
+    const fetchMock = stubGithub({
+      "/pulls/7": () =>
+        jsonResponse({ state: "open", mergeable_state: "clean" }),
+    });
+    await fetchPrStatus(coords, "pat");
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
   });
 });

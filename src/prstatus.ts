@@ -1,5 +1,6 @@
 import { clearInFlight, markInFlight } from "./autogroup";
 import { ensureGroupForTab, extensionGroupTitles } from "./groups";
+import { GITHUB_API, githubGet } from "./github";
 import { loadGithubPat } from "./githubPat";
 import { loadSettings } from "./settings";
 import { addUserOverride, loadState, recordManaged } from "./state";
@@ -89,20 +90,12 @@ export async function fetchPrStatus(
   c: PrCoords,
   pat: string | undefined,
 ): Promise<PrStatus> {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  if (pat) headers.Authorization = `Bearer ${pat}`;
-
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${c.owner}/${c.repo}/pulls/${c.number}`,
-      { headers },
+    const res = await githubGet(
+      `${GITHUB_API}/repos/${c.owner}/${c.repo}/pulls/${c.number}`,
+      pat,
     );
-    if (!res.ok) return "unknown";
-    const body = (await res.json()) as PrApiResponse;
-    return mapPrStatus(body);
+    return mapPrStatus((await res.json()) as PrApiResponse);
   } catch {
     return "unknown";
   }
