@@ -1,4 +1,4 @@
-import type { GroupColor } from "./types";
+import type { GroupColor, Settings } from "./types";
 
 /**
  * Find a group in `windowId` titled `name`; if it exists, just return its id
@@ -35,4 +35,12 @@ export async function ensureGroupForTab(
   const newId = await chrome.tabs.group(groupOpts);
   await chrome.tabGroups.update(newId, { title: name, color });
   return newId;
+}
+
+/** Titles of every group this extension creates. */
+export function extensionGroupTitles(settings: Settings): Set<string> {
+  return new Set([
+    ...settings.autoGroup.rules.map((rule) => rule.name),
+    ...Object.values(settings.prStatus.groupTitles),
+  ]);
 }

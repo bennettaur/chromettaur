@@ -8,6 +8,7 @@ import {
   installChromeStorageFake,
   type FakeStorageArea,
 } from "./chromeStorageFake";
+import { jsonResponse, stubGithub } from "./githubStub";
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -18,29 +19,12 @@ function setOwners(owners: string[]): void {
   sync.data.settings = { repoSwitcher: { owners } };
 }
 
-function jsonResponse(body: unknown, status = 200, headers = {}): Response {
-  return new Response(JSON.stringify(body), { status, headers });
-}
-
 function apiRepos(...fullNames: string[]) {
   return fullNames.map((full_name) => ({
     full_name,
     description: null,
     archived: false,
   }));
-}
-
-/** Route fetches by the first matching URL fragment. */
-function stubGithub(routes: Record<string, () => Response>) {
-  const fetchMock = vi.fn(async (url: string) => {
-    const match = Object.keys(routes).find((fragment) =>
-      url.includes(fragment),
-    );
-    if (!match) throw new Error(`Unexpected fetch: ${url}`);
-    return routes[match]();
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
 }
 
 beforeEach(() => {

@@ -1,5 +1,5 @@
 import { clearInFlight, markInFlight } from "./autogroup";
-import { ensureGroupForTab } from "./groups";
+import { ensureGroupForTab, extensionGroupTitles } from "./groups";
 import { loadGithubPat } from "./githubPat";
 import { loadSettings } from "./settings";
 import { addUserOverride, loadState, recordManaged } from "./state";
@@ -112,6 +112,7 @@ interface ApplyContext {
   pat: string | undefined;
   cfg: PrStatusSettings;
   respectUserOverride: boolean;
+  ownedTitles: Set<string>;
 }
 
 async function applyPrStatusToTab(
@@ -144,9 +145,11 @@ async function applyPrStatusToTab(
 
   // A group the extension never assigned was chosen by the user, so leave it.
   // Tabs another extension rule grouped (e.g. generic auto-group) fall through
-  // so PR status wins over it.
+  // so PR status wins over it. Titles count too: `managed` is keyed by tab ID,
+  // and Chrome renumbers tabs on restart.
   if (tab.groupId !== undefined && tab.groupId !== -1 && managed == null) {
-    return;
+    const group = await chrome.tabGroups.get(tab.groupId).catch(() => null);
+    if (!group?.title || !ctx.ownedTitles.has(group.title)) return;
   }
 
   const status = await fetchPrStatus(coords, ctx.pat);
@@ -222,6 +225,7 @@ async function sweepPrTabs(): Promise<boolean> {
         pat,
         cfg,
         respectUserOverride,
+        ownedTitles: extensionGroupTitles(settings),
       });
     }
   }
@@ -248,6 +252,7 @@ export async function handlePrTabNavigation(
     pat,
     cfg: settings.prStatus,
     respectUserOverride: settings.autoGroup.respectUserOverride,
+    ownedTitles: extensionGroupTitles(settings),
   });
   return true;
 }
