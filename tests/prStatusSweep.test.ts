@@ -194,3 +194,30 @@ describe("runPrStatusSweep unresolved threads", () => {
     expect(groupOf(fake, 1)).toMatchObject({ title: "PR: Needs attention" });
   });
 });
+
+describe("runPrStatusSweep after I re-request review", () => {
+  it("moves my PR out of Needs attention while a reviewer is requested", async () => {
+    const fake = installChromeTabsFake({
+      tabs: [{ id: 1, windowId: 1, url: PR_URL, groupId: 50 }],
+      groups: [
+        { id: 50, windowId: 1, title: "PR: Needs attention", color: "orange" },
+      ],
+    });
+    enablePrStatus(fake.sync);
+    fake.local.data.githubPat = "pat";
+    stubGithub({
+      "/user": () => jsonResponse({ login: "me" }),
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          mergeable_state: "blocked",
+          user: { login: "me" },
+          requested_reviewers: [{ login: "yk" }],
+        }),
+    });
+
+    await runPrStatusSweep();
+
+    expect(groupOf(fake, 1)).toMatchObject({ title: "PR: Blocked" });
+  });
+});

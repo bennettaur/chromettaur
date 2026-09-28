@@ -55,6 +55,7 @@ export interface PrApiResponse {
   mergeable_state?: string;
   user?: { login: string } | null;
   requested_reviewers?: { login: string }[];
+  requested_teams?: { slug: string }[];
 }
 
 export interface PrReview {
@@ -207,6 +208,18 @@ async function fetchReviewThreads(
   }));
 }
 
+/**
+ * GitHub drops a reviewer from the requested list when they review and adds
+ * them back on "Re-request review", so a non-empty list means the next move
+ * is theirs.
+ */
+function awaitingReviewers(pr: PrApiResponse): boolean {
+  return (
+    (pr.requested_reviewers?.length ?? 0) > 0 ||
+    (pr.requested_teams?.length ?? 0) > 0
+  );
+}
+
 export function resolvePrGroup(
   pr: PrApiResponse,
   reviews: PrReview[],
@@ -216,6 +229,7 @@ export function resolvePrGroup(
   const status = mapPrStatus(pr);
   if (status === "merged" || status === "closed") return status;
   if (viewer && sameLogin(pr.user?.login, viewer)) {
+    if (awaitingReviewers(pr)) return status;
     if (hasChangesRequested(reviews)) return "needsAttention";
     if (openThreads && !isReadyToMerge(status, reviews)) {
       return "needsAttention";
@@ -239,7 +253,8 @@ export async function fetchPrStatus(
       status === "reviewer" ||
       status === "merged" ||
       status === "closed" ||
-      !viewer
+      !viewer ||
+      (sameLogin(pr.user?.login, viewer) && awaitingReviewers(pr))
     ) {
       return status;
     }

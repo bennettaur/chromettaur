@@ -313,6 +313,16 @@ describe("resolvePrGroup needs attention", () => {
     expect(resolvePrGroup(clean, reviews, "me", false)).toBe("needsAttention");
   });
 
+  it("waits on reviewers I re-requested, even with changes requested", () => {
+    const waiting = { ...mine, requested_reviewers: [{ login: "a" }] };
+    expect(resolvePrGroup(waiting, cr, "me", true)).toBe("blocked");
+  });
+
+  it("waits on a requested team, even with open threads", () => {
+    const waiting = { ...mine, requested_teams: [{ slug: "core" }] };
+    expect(resolvePrGroup(waiting, [], "me", true)).toBe("blocked");
+  });
+
   it("ignores open threads on someone else's PR", () => {
     expect(resolvePrGroup({ ...mine, user: { login: "b" } }, [], "me", true)).toBe(
       "blocked",
@@ -390,6 +400,23 @@ describe("fetchPrStatus with a viewer", () => {
     });
     expect(await fetchPrStatus(coords, "pat", "me")).toBe("ready");
     expect(fetchMock.mock.calls.some(([u]) => u.includes("/graphql"))).toBe(false);
+  });
+
+  it("skips reviews and threads on my PR while a reviewer is requested", async () => {
+    const fetchMock = stubGithub({
+      "/graphql": () => threadsResponse([gqlThread(false)]),
+      "/pulls/7/reviews": () =>
+        jsonResponse([{ user: { login: "a" }, state: "CHANGES_REQUESTED" }]),
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          mergeable_state: "blocked",
+          user: { login: "me" },
+          requested_reviewers: [{ login: "a" }],
+        }),
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("blocked");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("never looks up threads on someone else's PR", async () => {
