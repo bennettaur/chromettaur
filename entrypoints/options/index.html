@@ -186,11 +186,13 @@
           <code>PR: Ready</code> (green),
           <code>PR: Blocked</code> (red),
           <code>PR: Merged</code> (purple),
-          <code>PR: Closed</code> (pink), and
+          <code>PR: Closed</code> (pink),
           <code>PR: Reviewer</code> (yellow) for PRs whose review is requested
-          from you or that you have reviewed. Reviewer wins over Draft / Ready
-          / Blocked; Merged and Closed win over Reviewer. Reviewer needs the
-          token below.
+          from you or that you have reviewed, and
+          <code>PR: Changes requested</code> (orange) for your own PRs where a
+          reviewer's latest verdict requests changes. Those two win over
+          Draft / Ready / Blocked; Merged and Closed win over both. Both need
+          the token below.
           A PR is "blocked" when GitHub reports
           <code>mergeable_state</code> of
           <code>blocked</code> / <code>dirty</code> / <code>behind</code> /

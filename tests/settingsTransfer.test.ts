@@ -152,7 +152,7 @@ describe("parseSettingsImport rejects", () => {
 });
 
 describe("reviewer group settings", () => {
-  it("fills reviewer defaults into settings stored before it existed", () => {
+  it("fills new group defaults into settings stored before they existed", () => {
     const merged = mergeWithDefaults({
       prStatus: {
         ...DEFAULT_SETTINGS.prStatus,
@@ -166,6 +166,10 @@ describe("reviewer group settings", () => {
       },
     } as never);
     expect(merged.prStatus.groupTitles.reviewer).toBe("PR: Reviewer");
+    expect(merged.prStatus.groupTitles.changesRequested).toBe(
+      "PR: Changes requested",
+    );
+    expect(merged.prStatus.groupColors.changesRequested).toBe("orange");
     expect(merged.prStatus.groupColors.reviewer).toBe("yellow");
     expect(merged.prStatus.groupTitles.draft).toBe("D");
   });

@@ -60,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
       merged: "purple",
       closed: "pink",
       reviewer: "yellow",
+      changesRequested: "orange",
     },
     groupTitles: {
       draft: "PR: Draft",
@@ -68,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
       merged: "PR: Merged",
       closed: "PR: Closed",
       reviewer: "PR: Reviewer",
+      changesRequested: "PR: Changes requested",
     },
   },
   autoOpen: {

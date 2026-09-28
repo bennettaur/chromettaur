@@ -52,8 +52,9 @@ export interface PrApiResponse {
   requested_reviewers?: { login: string }[];
 }
 
-interface ReviewApiResponse {
+export interface PrReview {
   user: { login: string } | null;
+  state: string;
 }
 
 /**
@@ -103,24 +104,43 @@ function sameLogin(a: string | undefined, b: string): boolean {
 /** Requested (as a user, not a team) or already reviewed, and not the author. */
 export function isReviewer(
   pr: PrApiResponse,
-  reviewLogins: string[],
+  reviews: PrReview[],
   viewer: string | null,
 ): boolean {
   if (!viewer || sameLogin(pr.user?.login, viewer)) return false;
   return (
     (pr.requested_reviewers ?? []).some((u) => sameLogin(u.login, viewer)) ||
-    reviewLogins.some((login) => sameLogin(login, viewer))
+    reviews.some((r) => sameLogin(r.user?.login, viewer))
   );
+}
+
+const VERDICT_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+
+/**
+ * True when any reviewer's latest verdict requests changes. Plain comments
+ * don't change a verdict. Expects reviews oldest first, as GitHub lists them.
+ */
+export function hasChangesRequested(reviews: PrReview[]): boolean {
+  const latest = new Map<string, string>();
+  for (const r of reviews) {
+    if (r.user && VERDICT_STATES.has(r.state)) {
+      latest.set(r.user.login.toLowerCase(), r.state);
+    }
+  }
+  return [...latest.values()].includes("CHANGES_REQUESTED");
 }
 
 export function resolvePrGroup(
   pr: PrApiResponse,
-  reviewLogins: string[],
+  reviews: PrReview[],
   viewer: string | null,
 ): PrStatus {
   const status = mapPrStatus(pr);
   if (status === "merged" || status === "closed") return status;
-  return isReviewer(pr, reviewLogins, viewer) ? "reviewer" : status;
+  if (viewer && sameLogin(pr.user?.login, viewer)) {
+    return hasChangesRequested(reviews) ? "changesRequested" : status;
+  }
+  return isReviewer(pr, reviews, viewer) ? "reviewer" : status;
 }
 
 export async function fetchPrStatus(
@@ -137,16 +157,13 @@ export async function fetchPrStatus(
       status === "reviewer" ||
       status === "merged" ||
       status === "closed" ||
-      !viewer ||
-      sameLogin(pr.user?.login, viewer)
+      !viewer
     ) {
       return status;
     }
     const res = await githubGet(`${prUrl}/reviews?per_page=100`, pat);
-    const logins = ((await res.json()) as ReviewApiResponse[]).flatMap((r) =>
-      r.user ? [r.user.login] : [],
-    );
-    return resolvePrGroup(pr, logins, viewer);
+    const reviews = (await res.json()) as PrReview[];
+    return resolvePrGroup(pr, reviews, viewer);
   } catch {
     return "unknown";
   }

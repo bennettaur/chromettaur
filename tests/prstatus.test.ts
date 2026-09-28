@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   extractPrCoords,
   fetchPrStatus,
+  hasChangesRequested,
   isReviewer,
   mapPrStatus,
   prKey,
@@ -124,6 +125,11 @@ describe("fetchPrStatus", () => {
   });
 });
 
+const review = (login: string, state = "COMMENTED") => ({
+  user: { login },
+  state,
+});
+
 describe("resolvePrGroup", () => {
   const open = { state: "open" as const, mergeable_state: "blocked" };
 
@@ -137,7 +143,7 @@ describe("resolvePrGroup", () => {
   });
 
   it("is reviewer when I already reviewed", () => {
-    expect(resolvePrGroup({ ...open, user: { login: "a" } }, ["me"], "me")).toBe(
+    expect(resolvePrGroup({ ...open, user: { login: "a" } }, [review("me")], "me")).toBe(
       "reviewer",
     );
   });
@@ -148,7 +154,7 @@ describe("resolvePrGroup", () => {
       user: { login: "me" },
       requested_reviewers: [{ login: "me" }],
     };
-    expect(resolvePrGroup(pr, ["me"], "me")).toBe("blocked");
+    expect(resolvePrGroup(pr, [review("me")], "me")).toBe("blocked");
   });
 
   it("puts merged and closed ahead of reviewer", () => {
@@ -165,12 +171,90 @@ describe("resolvePrGroup", () => {
       user: { login: "a" },
       requested_reviewers: [{ login: "me" }],
     };
-    expect(resolvePrGroup(pr, ["me"], null)).toBe("blocked");
+    expect(resolvePrGroup(pr, [review("me")], null)).toBe("blocked");
   });
 
   it("ignores team review requests", () => {
     const pr = { ...open, user: { login: "a" }, requested_reviewers: [] };
     expect(isReviewer(pr, [], "me")).toBe(false);
+  });
+});
+
+describe("hasChangesRequested", () => {
+  it("is true when a reviewer's latest verdict requests changes", () => {
+    expect(hasChangesRequested([review("a", "CHANGES_REQUESTED")])).toBe(true);
+  });
+
+  it("clears once that reviewer approves", () => {
+    expect(
+      hasChangesRequested([
+        review("a", "CHANGES_REQUESTED"),
+        review("a", "APPROVED"),
+      ]),
+    ).toBe(false);
+  });
+
+  it("clears once the review is dismissed", () => {
+    expect(
+      hasChangesRequested([
+        review("a", "CHANGES_REQUESTED"),
+        review("a", "DISMISSED"),
+      ]),
+    ).toBe(false);
+  });
+
+  it("is not cleared by a later plain comment", () => {
+    expect(
+      hasChangesRequested([
+        review("a", "CHANGES_REQUESTED"),
+        review("a", "COMMENTED"),
+      ]),
+    ).toBe(true);
+  });
+
+  it("is true when one of several reviewers requests changes", () => {
+    expect(
+      hasChangesRequested([
+        review("a", "APPROVED"),
+        review("b", "CHANGES_REQUESTED"),
+      ]),
+    ).toBe(true);
+  });
+
+  it("is false with no reviews", () => {
+    expect(hasChangesRequested([])).toBe(false);
+  });
+});
+
+describe("resolvePrGroup changes requested", () => {
+  const mine = { state: "open" as const, mergeable_state: "blocked", user: { login: "me" } };
+  const cr = [review("a", "CHANGES_REQUESTED")];
+
+  it("puts my PR with changes requested into changesRequested", () => {
+    expect(resolvePrGroup(mine, cr, "me")).toBe("changesRequested");
+  });
+
+  it("wins over draft", () => {
+    expect(resolvePrGroup({ ...mine, draft: true }, cr, "me")).toBe(
+      "changesRequested",
+    );
+  });
+
+  it("loses to merged and closed", () => {
+    expect(resolvePrGroup({ ...mine, merged: true, state: "closed" }, cr, "me")).toBe(
+      "merged",
+    );
+    expect(resolvePrGroup({ ...mine, state: "closed" }, cr, "me")).toBe("closed");
+  });
+
+  it("does not apply to someone else's PR", () => {
+    expect(resolvePrGroup({ ...mine, user: { login: "b" } }, cr, "me")).toBe(
+      "blocked",
+    );
+  });
+
+  it("does not apply without a viewer login", () => {
+    expect(resolvePrGroup(mine, cr, null)).toBe("blocked");
   });
 });
 
@@ -187,6 +271,16 @@ describe("fetchPrStatus with a viewer", () => {
     vi.unstubAllGlobals();
   });
   const coords = { owner: "org", repo: "repo", number: "7" };
+
+  it("checks reviews on my own PR and reports changes requested", async () => {
+    stubGithub({
+      "/pulls/7/reviews": () =>
+        jsonResponse([{ user: { login: "a" }, state: "CHANGES_REQUESTED" }]),
+      "/pulls/7": () =>
+        jsonResponse({ state: "open", mergeable_state: "clean", user: { login: "me" } }),
+    });
+    expect(await fetchPrStatus(coords, "pat", "me")).toBe("changesRequested");
+  });
 
   it("skips the reviews call when my review is requested", async () => {
     const fetchMock = stubGithub({

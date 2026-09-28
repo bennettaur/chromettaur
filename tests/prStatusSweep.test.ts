@@ -127,3 +127,31 @@ describe("runPrStatusSweep reviewer grouping", () => {
     expect(fake.tabs[0].groupId).toBe(-1);
   });
 });
+
+describe("runPrStatusSweep changes requested", () => {
+  it("puts my PR with changes requested into PR: Changes requested", async () => {
+    const fake = installChromeTabsFake({
+      tabs: [{ id: 1, windowId: 1, url: PR_URL, groupId: -1 }],
+    });
+    enablePrStatus(fake.sync);
+    fake.local.data.githubPat = "pat";
+    stubGithub({
+      "/user": () => jsonResponse({ login: "me" }),
+      "/pulls/7/reviews": () =>
+        jsonResponse([{ user: { login: "a" }, state: "CHANGES_REQUESTED" }]),
+      "/pulls/7": () =>
+        jsonResponse({
+          state: "open",
+          mergeable_state: "blocked",
+          user: { login: "me" },
+        }),
+    });
+
+    await runPrStatusSweep();
+
+    expect(groupOf(fake, 1)).toMatchObject({
+      title: "PR: Changes requested",
+      color: "orange",
+    });
+  });
+});

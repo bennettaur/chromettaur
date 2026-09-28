@@ -81,6 +81,7 @@ export type PrStatus =
   | "merged"
   | "closed"
   | "reviewer"
+  | "changesRequested"
   | "unknown";
 
 export const PR_STATUSES: Exclude<PrStatus, "unknown">[] = [
@@ -90,6 +91,7 @@ export const PR_STATUSES: Exclude<PrStatus, "unknown">[] = [
   "merged",
   "closed",
   "reviewer",
+  "changesRequested",
 ];
 
 export interface PrStatusSettings {
