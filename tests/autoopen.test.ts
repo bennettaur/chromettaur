@@ -205,6 +205,29 @@ describe("after a Chrome restart", () => {
     expect(fake.tabs).toEqual([]);
   });
 
+  it("re-links restored tabs on the next poll when the startup rebuild missed them", async () => {
+    const fake = restartWith([
+      { id: 300, windowId: 1, url: url(1), groupId: -1 },
+    ]);
+    stubSearch([1]);
+    await runAutoOpen(NOW);
+    fake.tabs.splice(0, 1);
+    await handleTrackedTabRemoved(300, false);
+
+    expect((await loadAutoOpenState()).dismissed).toEqual(["org/r#1"]);
+  });
+
+  it("closes a restored tab on merge when the startup rebuild missed it", async () => {
+    const fake = restartWith([
+      { id: 300, windowId: 1, url: url(1), groupId: -1 },
+    ]);
+    stubSearch([], { 1: { merged: true, state: "closed" } });
+
+    await runAutoOpen(NOW);
+
+    expect(fake.tabs).toEqual([]);
+  });
+
   it("still dismisses a restored auto-opened tab I close", async () => {
     const fake = restartWith([
       { id: 300, windowId: 1, url: url(1), groupId: -1 },

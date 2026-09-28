@@ -108,6 +108,7 @@ async function runAutoOpenNow(now: number): Promise<void> {
     maxPerPoll: settings.autoOpen.maxPerPoll,
   });
   const autoOpened = plan.autoOpened;
+  relinkUnmappedTabs(tabMap, openTabs, autoOpened);
 
   for (const key of plan.toCheck) {
     const coords = extractPrCoords(autoOpened[key].url);
@@ -167,14 +168,30 @@ async function runAutoOpenNow(now: number): Promise<void> {
   });
 }
 
+/**
+ * Link open tabs to auto-opened PRs that have no tab in the map. Tabs get new
+ * IDs when Chrome restores them (restart, reopened window), so this runs on
+ * every poll as well as at startup.
+ */
+function relinkUnmappedTabs(
+  map: TabMap,
+  openTabs: OpenPrTab[],
+  autoOpened: AutoOpened,
+): void {
+  const mappedKeys = new Set(Object.values(map));
+  for (const t of openTabs) {
+    if (autoOpened[t.key] && !mappedKeys.has(t.key)) {
+      map[String(t.tabId)] = t.key;
+    }
+  }
+}
+
 /** Re-link restored tabs to the PRs this extension opened. */
 export function rebuildAutoOpenTabMap(): Promise<void> {
   return serialized(async () => {
     const { autoOpened } = await loadAutoOpenState();
     const map: TabMap = {};
-    for (const t of await listOpenPrTabs()) {
-      if (autoOpened[t.key]) map[String(t.tabId)] = t.key;
-    }
+    relinkUnmappedTabs(map, await listOpenPrTabs(), autoOpened);
     await saveTabMap(map);
   });
 }
