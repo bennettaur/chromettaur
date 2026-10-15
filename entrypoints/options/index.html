@@ -186,7 +186,17 @@
           <code>PR: Ready</code> (green),
           <code>PR: Blocked</code> (red),
           <code>PR: Merged</code> (purple),
-          <code>PR: Closed</code> (pink).
+          <code>PR: Closed</code> (pink),
+          <code>PR: Reviewer</code> (yellow) for PRs whose review is requested
+          from you or that you have reviewed, and
+          <code>PR: Needs attention</code> (orange) for your own PRs where a
+          reviewer's latest verdict requests changes, or a review thread a
+          person started is still unresolved (unless the PR is approved and
+          mergeable, which stays Ready). While any reviewer or team is
+          requested, e.g. after you click Re-request review, it goes to its
+          usual group instead. Those two win over
+          Draft / Ready / Blocked; Merged and Closed win over both. Both need
+          the token below.
           A PR is "blocked" when GitHub reports
           <code>mergeable_state</code> of
           <code>blocked</code> / <code>dirty</code> / <code>behind</code> /
@@ -195,7 +205,7 @@
         </p>
         <p class="hint">
           Without a token, the GitHub API allows 60 unauthenticated requests
-          per hour from your IP — enough for a handful of PRs at a 5-minute
+          per hour from your IP — enough for about two PR tabs at a 2-minute
           poll. For more, create a fine-grained PAT with
           <strong>read-only Pull requests</strong> scope on the repos you
           review and paste it below. The repo switcher uses the same token.
@@ -234,6 +244,30 @@
           <span id="pr-pat-status" class="hint" style="margin-left: 8px"></span>
         </div>
         <div id="pr-run-status" class="hint" aria-live="polite"></div>
+
+        <h3>Auto-open my PRs</h3>
+        <p class="hint">
+          Each poll, finds open PRs requesting your review, PRs you have
+          reviewed, and PRs you authored, and opens any that aren't open yet
+          in the background, most recently updated first. The limit below
+          counts every tab it has open, not just new ones. Tabs it opened
+          close when their PR is merged or closed and appear under “Recently
+          auto-closed”. Closing one, or
+          navigating it away from the PR, stops it reopening. Needs PR status
+          grouping on and a GitHub token. Only repos the token can read are
+          searched.
+        </p>
+        <label class="row">
+          <input type="checkbox" id="ao-enabled" />
+          <span>Auto-open my PRs</span>
+        </label>
+        <div class="grid">
+          <label>
+            <span>Max auto-opened tabs open at once (1–50)</span>
+            <input type="number" id="ao-max" min="1" max="50" step="1" />
+          </label>
+        </div>
+        <div id="ao-status" class="hint" aria-live="polite"></div>
       </section>
 
       <section id="section-reposwitcher">

@@ -1,5 +1,11 @@
 import { clearInFlight, markInFlight } from "./autogroup";
-import { ensureGroupForTab } from "./groups";
+import { ensureGroupForTab, extensionGroupTitles } from "./groups";
+import {
+  GITHUB_API,
+  githubGet,
+  githubGraphql,
+  loadViewerLogin,
+} from "./github";
 import { loadGithubPat } from "./githubPat";
 import { loadSettings } from "./settings";
 import { addUserOverride, loadState, recordManaged } from "./state";
@@ -42,11 +48,19 @@ export async function clearPrStatusAlarm(): Promise<void> {
   await chrome.alarms.clear(PR_STATUS_ALARM);
 }
 
-interface PrApiResponse {
+export interface PrApiResponse {
   draft?: boolean;
   merged?: boolean;
   state?: "open" | "closed";
   mergeable_state?: string;
+  user?: { login: string } | null;
+  requested_reviewers?: { login: string }[];
+  requested_teams?: { slug: string }[];
+}
+
+export interface PrReview {
+  user: { login: string } | null;
+  state: string;
 }
 
 /**
@@ -85,38 +99,192 @@ export function mapPrStatus(body: PrApiResponse): PrStatus {
   }
 }
 
+export function prKey(c: PrCoords): string {
+  return `${c.owner.toLowerCase()}/${c.repo.toLowerCase()}#${c.number}`;
+}
+
+function sameLogin(a: string | undefined, b: string): boolean {
+  return a !== undefined && a.toLowerCase() === b.toLowerCase();
+}
+
+/** Requested (as a user, not a team) or already reviewed, and not the author. */
+export function isReviewer(
+  pr: PrApiResponse,
+  reviews: PrReview[],
+  viewer: string | null,
+): boolean {
+  if (!viewer || sameLogin(pr.user?.login, viewer)) return false;
+  return (
+    (pr.requested_reviewers ?? []).some((u) => sameLogin(u.login, viewer)) ||
+    reviews.some((r) => sameLogin(r.user?.login, viewer))
+  );
+}
+
+const VERDICT_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+
+/**
+ * Each reviewer's latest verdict. Plain comments don't change a verdict.
+ * Expects reviews oldest first, as GitHub lists them.
+ */
+function latestVerdicts(reviews: PrReview[]): string[] {
+  const latest = new Map<string, string>();
+  for (const r of reviews) {
+    if (r.user && VERDICT_STATES.has(r.state)) {
+      latest.set(r.user.login.toLowerCase(), r.state);
+    }
+  }
+  return [...latest.values()];
+}
+
+export function hasChangesRequested(reviews: PrReview[]): boolean {
+  return latestVerdicts(reviews).includes("CHANGES_REQUESTED");
+}
+
+function isApproved(reviews: PrReview[]): boolean {
+  const verdicts = latestVerdicts(reviews);
+  return (
+    verdicts.includes("APPROVED") && !verdicts.includes("CHANGES_REQUESTED")
+  );
+}
+
+/** Approved and mergeable stays Ready: leftover threads don't block merging. */
+function isReadyToMerge(status: PrStatus, reviews: PrReview[]): boolean {
+  return status === "ready" && isApproved(reviews);
+}
+
+export interface ReviewThread {
+  isResolved: boolean;
+  startedBy: { __typename: string; login: string } | null;
+}
+
+/** Unresolved threads count until someone resolves them; bot threads never. */
+export function hasOpenThreads(threads: ReviewThread[]): boolean {
+  return threads.some(
+    (t) => !t.isResolved && t.startedBy?.__typename !== "Bot",
+  );
+}
+
+const REVIEW_THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          comments(first: 1) { nodes { author { __typename login } } }
+        }
+      }
+    }
+  }
+}`;
+
+interface ReviewThreadsData {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        nodes: {
+          isResolved: boolean;
+          comments: {
+            nodes: { author: { __typename: string; login: string } | null }[];
+          };
+        }[];
+      };
+    } | null;
+  } | null;
+}
+
+async function fetchReviewThreads(
+  c: PrCoords,
+  pat: string,
+): Promise<ReviewThread[]> {
+  const data = await githubGraphql<ReviewThreadsData>(
+    REVIEW_THREADS_QUERY,
+    { owner: c.owner, repo: c.repo, number: Number(c.number) },
+    pat,
+  );
+  const nodes = data.repository?.pullRequest?.reviewThreads.nodes ?? [];
+  return nodes.map((n) => ({
+    isResolved: n.isResolved,
+    startedBy: n.comments.nodes[0]?.author ?? null,
+  }));
+}
+
+/**
+ * GitHub drops a reviewer from the requested list when they review and adds
+ * them back on "Re-request review", so a non-empty list means the next move
+ * is theirs.
+ */
+function awaitingReviewers(pr: PrApiResponse): boolean {
+  return (
+    (pr.requested_reviewers?.length ?? 0) > 0 ||
+    (pr.requested_teams?.length ?? 0) > 0
+  );
+}
+
+export function resolvePrGroup(
+  pr: PrApiResponse,
+  reviews: PrReview[],
+  viewer: string | null,
+  openThreads = false,
+): PrStatus {
+  const status = mapPrStatus(pr);
+  if (status === "merged" || status === "closed") return status;
+  if (viewer && sameLogin(pr.user?.login, viewer)) {
+    if (awaitingReviewers(pr)) return status;
+    if (hasChangesRequested(reviews)) return "needsAttention";
+    if (openThreads && !isReadyToMerge(status, reviews)) {
+      return "needsAttention";
+    }
+    return status;
+  }
+  return isReviewer(pr, reviews, viewer) ? "reviewer" : status;
+}
+
 export async function fetchPrStatus(
   c: PrCoords,
   pat: string | undefined,
+  viewer: string | null = null,
 ): Promise<PrStatus> {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  if (pat) headers.Authorization = `Bearer ${pat}`;
-
+  const prUrl = `${GITHUB_API}/repos/${c.owner}/${c.repo}/pulls/${c.number}`;
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${c.owner}/${c.repo}/pulls/${c.number}`,
-      { headers },
-    );
-    if (!res.ok) return "unknown";
-    const body = (await res.json()) as PrApiResponse;
-    return mapPrStatus(body);
+    const pr = (await (await githubGet(prUrl, pat)).json()) as PrApiResponse;
+    const status = resolvePrGroup(pr, [], viewer);
+    // The reviews call can only change a non-final, non-reviewer answer.
+    if (
+      status === "reviewer" ||
+      status === "merged" ||
+      status === "closed" ||
+      !viewer ||
+      (sameLogin(pr.user?.login, viewer) && awaitingReviewers(pr))
+    ) {
+      return status;
+    }
+    const res = await githubGet(`${prUrl}/reviews?per_page=100`, pat);
+    const reviews = (await res.json()) as PrReview[];
+    if (
+      pat &&
+      sameLogin(pr.user?.login, viewer) &&
+      !hasChangesRequested(reviews) &&
+      !isReadyToMerge(mapPrStatus(pr), reviews)
+    ) {
+      const threads = await fetchReviewThreads(c, pat);
+      return resolvePrGroup(pr, reviews, viewer, hasOpenThreads(threads));
+    }
+    return resolvePrGroup(pr, reviews, viewer);
   } catch {
     return "unknown";
   }
 }
 
 interface ApplyContext {
-  pat: string | undefined;
   cfg: PrStatusSettings;
   respectUserOverride: boolean;
+  ownedTitles: Set<string>;
 }
 
 async function applyPrStatusToTab(
   tab: chrome.tabs.Tab,
   ctx: ApplyContext,
+  getStatus: () => Promise<PrStatus>,
 ): Promise<void> {
   if (tab.id == null || !tab.url) return;
   const coords = extractPrCoords(tab.url);
@@ -144,12 +312,14 @@ async function applyPrStatusToTab(
 
   // A group the extension never assigned was chosen by the user, so leave it.
   // Tabs another extension rule grouped (e.g. generic auto-group) fall through
-  // so PR status wins over it.
+  // so PR status wins over it. Titles count too: `managed` is keyed by tab ID,
+  // and Chrome renumbers tabs on restart.
   if (tab.groupId !== undefined && tab.groupId !== -1 && managed == null) {
-    return;
+    const group = await chrome.tabGroups.get(tab.groupId).catch(() => null);
+    if (!group?.title || !ctx.ownedTitles.has(group.title)) return;
   }
 
-  const status = await fetchPrStatus(coords, ctx.pat);
+  const status = await getStatus();
   if (status === "unknown") return;
 
   const name = ctx.cfg.groupTitles[status];
@@ -193,7 +363,18 @@ async function sweepPrTabs(): Promise<boolean> {
   if (!cfg.enabled) return false;
 
   const pat = await loadGithubPat();
-  const respectUserOverride = settings.autoGroup.respectUserOverride;
+  let viewer: string | null;
+  try {
+    viewer = await loadViewerLogin(pat);
+  } catch {
+    // Without the login, reviewer tabs would be moved to their status groups.
+    return true;
+  }
+  const ctx: ApplyContext = {
+    cfg,
+    respectUserOverride: settings.autoGroup.respectUserOverride,
+    ownedTitles: extensionGroupTitles(settings),
+  };
 
   const tabs = await chrome.tabs.query({
     url: "https://github.com/*/*/pull/*",
@@ -214,15 +395,11 @@ async function sweepPrTabs(): Promise<boolean> {
     const first = group[0];
     if (!first?.url) continue;
     const coords = extractPrCoords(first.url)!;
-    const status = await fetchPrStatus(coords, pat);
+    const status = await fetchPrStatus(coords, pat, viewer);
     if (status === "unknown") continue;
 
     for (const tab of group) {
-      await applyPrStatusToTab(tab, {
-        pat,
-        cfg,
-        respectUserOverride,
-      });
+      await applyPrStatusToTab(tab, ctx, async () => status);
     }
   }
   return true;
@@ -244,10 +421,20 @@ export async function handlePrTabNavigation(
   if (!settings.prStatus.enabled) return false;
 
   const pat = await loadGithubPat();
-  await applyPrStatusToTab(tab, {
-    pat,
-    cfg: settings.prStatus,
-    respectUserOverride: settings.autoGroup.respectUserOverride,
-  });
+  let viewer: string | null;
+  try {
+    viewer = await loadViewerLogin(pat);
+  } catch {
+    return true;
+  }
+  await applyPrStatusToTab(
+    tab,
+    {
+      cfg: settings.prStatus,
+      respectUserOverride: settings.autoGroup.respectUserOverride,
+      ownedTitles: extensionGroupTitles(settings),
+    },
+    () => fetchPrStatus(coords, pat, viewer),
+  );
   return true;
 }

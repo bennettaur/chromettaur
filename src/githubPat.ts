@@ -1,3 +1,5 @@
+import { forgetViewerLogin } from "./github";
+
 const PAT_KEY = "githubPat";
 
 /**
@@ -11,6 +13,7 @@ export async function loadGithubPat(): Promise<string | undefined> {
 }
 
 export async function saveGithubPat(pat: string): Promise<void> {
+  await forgetViewerLogin();
   if (!pat) {
     await chrome.storage.local.remove(PAT_KEY);
     return;
@@ -19,5 +22,6 @@ export async function saveGithubPat(pat: string): Promise<void> {
 }
 
 export async function clearGithubPat(): Promise<void> {
+  await forgetViewerLogin();
   await chrome.storage.local.remove(PAT_KEY);
 }

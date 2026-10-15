@@ -150,3 +150,68 @@ describe("parseSettingsImport rejects", () => {
     ).toThrow('"autoGroup.rules" contains an invalid rule');
   });
 });
+
+describe("reviewer group settings", () => {
+  it("fills new group defaults into settings stored before they existed", () => {
+    const merged = mergeWithDefaults({
+      prStatus: {
+        ...DEFAULT_SETTINGS.prStatus,
+        groupTitles: {
+          draft: "D",
+          ready: "R",
+          blocked: "B",
+          merged: "M",
+          closed: "C",
+        },
+      },
+    } as never);
+    expect(merged.prStatus.groupTitles.reviewer).toBe("PR: Reviewer");
+    expect(merged.prStatus.groupTitles.needsAttention).toBe(
+      "PR: Needs attention",
+    );
+    expect(merged.prStatus.groupColors.needsAttention).toBe("orange");
+    expect(merged.prStatus.groupColors.reviewer).toBe("yellow");
+    expect(merged.prStatus.groupTitles.draft).toBe("D");
+  });
+
+  it("round-trips a customised reviewer group", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.prStatus.groupTitles.reviewer = "Review me";
+    settings.prStatus.groupColors.reviewer = "orange";
+    expect(parseSettingsImport(serializeSettings(settings))).toEqual(settings);
+  });
+});
+
+describe("autoOpen settings", () => {
+  it("defaults to off with a cap of 10", () => {
+    expect(mergeWithDefaults({}).autoOpen).toEqual({
+      enabled: false,
+      maxOpen: 10,
+    });
+  });
+
+  it("round-trips", () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.autoOpen = { enabled: true, maxOpen: 3 };
+    expect(parseSettingsImport(serializeSettings(settings))).toEqual(settings);
+  });
+
+  it("rejects a non-boolean enabled", () => {
+    expect(() =>
+      parseSettingsImport(exportWith({ autoOpen: { enabled: "yes" } })),
+    ).toThrow('"autoOpen.enabled" must be true or false.');
+  });
+});
+
+describe("PR status defaults", () => {
+  it("polls every 2 minutes", () => {
+    expect(mergeWithDefaults({}).prStatus.pollMinutes).toBe(2);
+  });
+
+  it("keeps a poll interval the user already saved", () => {
+    const merged = mergeWithDefaults({
+      prStatus: { ...DEFAULT_SETTINGS.prStatus, pollMinutes: 5 },
+    });
+    expect(merged.prStatus.pollMinutes).toBe(5);
+  });
+});

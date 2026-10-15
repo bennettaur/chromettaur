@@ -4,6 +4,7 @@ import {
   saveSettings,
 } from "../../src/settings";
 import { isValidPattern, isValidRegex } from "../../src/matcher";
+import { loadAutoOpenState } from "../../src/autoopen";
 import {
   isValidGithubOwner,
   refreshRepoCache,
@@ -71,6 +72,10 @@ function render(): void {
   // PR status
   $<HTMLInputElement>("pr-enabled").checked = working.prStatus.enabled;
   $<HTMLInputElement>("pr-poll").value = String(working.prStatus.pollMinutes);
+
+  // Auto-open
+  $<HTMLInputElement>("ao-enabled").checked = working.autoOpen.enabled;
+  $<HTMLInputElement>("ao-max").value = String(working.autoOpen.maxOpen);
 
   // Repo switcher
   renderOwners();
@@ -302,6 +307,8 @@ function collectFromInputs(): void {
   working.prStatus.pollMinutes = Number(
     $<HTMLInputElement>("pr-poll").value,
   );
+  working.autoOpen.enabled = $<HTMLInputElement>("ao-enabled").checked;
+  working.autoOpen.maxOpen = Number($<HTMLInputElement>("ao-max").value);
 }
 
 function validate(): string | null {
@@ -342,6 +349,10 @@ function validate(): string | null {
     working.prStatus.pollMinutes < 0.5
   ) {
     return "PR status poll interval must be ≥ 0.5 (Chrome floor).";
+  }
+  const max = working.autoOpen.maxOpen;
+  if (!Number.isInteger(max) || max < 1 || max > 50) {
+    return "Max auto-opened tabs open at once must be a whole number from 1 to 50.";
   }
   for (const owner of working.repoSwitcher.owners) {
     if (owner.trim() === "") continue;
@@ -445,6 +456,13 @@ async function refreshPatStatus(): Promise<void> {
     : "No token saved — using unauthenticated GitHub API (60 req/hr).";
 }
 
+async function refreshAutoOpenStatus(): Promise<void> {
+  const { lastError } = await loadAutoOpenState();
+  $<HTMLDivElement>("ao-status").textContent = lastError
+    ? `Last auto-open problem (${new Date(lastError.at).toLocaleString()}): ${lastError.message}`
+    : "";
+}
+
 async function refreshRepoStatus(): Promise<void> {
   const { repoCount, oldestFetchAt } = await summarizeRepoCache();
   $<HTMLSpanElement>("rs-status").textContent =
@@ -497,7 +515,11 @@ function addAutoGroupRule(): void {
 async function bootstrap(): Promise<void> {
   working = await loadSettings();
   render();
-  await Promise.all([refreshPatStatus(), refreshRepoStatus()]);
+  await Promise.all([
+    refreshPatStatus(),
+    refreshRepoStatus(),
+    refreshAutoOpenStatus(),
+  ]);
 
   $("save-btn").addEventListener("click", handleSave);
   $("reset-btn").addEventListener("click", () => {

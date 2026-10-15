@@ -2,10 +2,10 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   extractRepoFullName,
   fetchOwnerRepos,
-  GithubRequestError,
   isValidGithubOwner,
   parseNextLink,
 } from "../src/repoCache";
+import { GithubRequestError } from "../src/github";
 
 function jsonResponse(
   body: unknown,

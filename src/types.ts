@@ -80,6 +80,8 @@ export type PrStatus =
   | "blocked"
   | "merged"
   | "closed"
+  | "reviewer"
+  | "needsAttention"
   | "unknown";
 
 export const PR_STATUSES: Exclude<PrStatus, "unknown">[] = [
@@ -88,6 +90,8 @@ export const PR_STATUSES: Exclude<PrStatus, "unknown">[] = [
   "blocked",
   "merged",
   "closed",
+  "reviewer",
+  "needsAttention",
 ];
 
 export interface PrStatusSettings {
@@ -95,6 +99,12 @@ export interface PrStatusSettings {
   pollMinutes: number;
   groupColors: Record<Exclude<PrStatus, "unknown">, GroupColor>;
   groupTitles: Record<Exclude<PrStatus, "unknown">, string>;
+}
+
+export interface AutoOpenSettings {
+  enabled: boolean;
+  /** Cap on auto-opened tabs open at once, not per poll. */
+  maxOpen: number;
 }
 
 export interface RepoSwitcherSettings {
@@ -107,6 +117,7 @@ export interface Settings {
   uniqueness: UniquenessSettings;
   autoGroup: AutoGroupSettings;
   prStatus: PrStatusSettings;
+  autoOpen: AutoOpenSettings;
   repoSwitcher: RepoSwitcherSettings;
 }
 

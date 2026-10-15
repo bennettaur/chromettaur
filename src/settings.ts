@@ -52,13 +52,15 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   prStatus: {
     enabled: false,
-    pollMinutes: 5,
+    pollMinutes: 2,
     groupColors: {
       draft: "grey",
       ready: "green",
       blocked: "red",
       merged: "purple",
       closed: "pink",
+      reviewer: "yellow",
+      needsAttention: "orange",
     },
     groupTitles: {
       draft: "PR: Draft",
@@ -66,7 +68,13 @@ export const DEFAULT_SETTINGS: Settings = {
       blocked: "PR: Blocked",
       merged: "PR: Merged",
       closed: "PR: Closed",
+      reviewer: "PR: Reviewer",
+      needsAttention: "PR: Needs attention",
     },
+  },
+  autoOpen: {
+    enabled: false,
+    maxOpen: 10,
   },
   repoSwitcher: {
     owners: ["wealthsimple", "bennettaur"],
@@ -93,6 +101,7 @@ export function mergeWithDefaults(stored: Partial<Settings> | undefined): Settin
         ...stored.prStatus?.groupTitles,
       },
     },
+    autoOpen: { ...DEFAULT_SETTINGS.autoOpen, ...stored.autoOpen },
     repoSwitcher: { ...DEFAULT_SETTINGS.repoSwitcher, ...stored.repoSwitcher },
   });
 }

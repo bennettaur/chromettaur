@@ -1,6 +1,12 @@
 import { defineBackground } from "wxt/sandbox";
 import { ensureSweepAlarm, runSweep, SWEEP_ALARM } from "../src/autoclose";
 import { handleAutoGroup, reconcileGroupChange } from "../src/autogroup";
+import {
+  handleTrackedTabNavigated,
+  handleTrackedTabRemoved,
+  rebuildAutoOpenTabMap,
+  runAutoOpen,
+} from "../src/autoopen";
 import { isRestrictedUrl } from "../src/matcher";
 import { openPalette, PALETTE_COMMANDS } from "../src/palette";
 import {
@@ -60,12 +66,14 @@ export default defineBackground(() => {
     void initAlarms();
     void pruneStaleState();
     void refreshRepoCache();
+    void rebuildAutoOpenTabMap();
   });
 
   chrome.runtime.onStartup.addListener(() => {
     void initAlarms();
     void pruneStaleState();
     void refreshRepoCache();
+    void rebuildAutoOpenTabMap();
   });
 
   chrome.commands.onCommand.addListener((command) => {
@@ -78,7 +86,7 @@ export default defineBackground(() => {
     if (alarm.name === SWEEP_ALARM) {
       void runSweep();
     } else if (alarm.name === PR_STATUS_ALARM) {
-      void runPrStatusSweep();
+      void runPrStatusSweep().then(() => runAutoOpen());
     } else if (alarm.name === REPO_CACHE_ALARM) {
       void refreshRepoCache({ force: true });
     }
@@ -95,6 +103,11 @@ export default defineBackground(() => {
     ) {
       void runPrStatusSweep();
     }
+    if (
+      JSON.stringify(oldValue?.autoOpen) !== JSON.stringify(newValue?.autoOpen)
+    ) {
+      void runPrStatusSweep().then(() => runAutoOpen());
+    }
     // Fetches newly added owners and drops removed ones.
     void refreshRepoCache();
   });
@@ -102,6 +115,10 @@ export default defineBackground(() => {
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type !== PR_STATUS_SWEEP_MESSAGE) return false;
     runPrStatusSweep()
+      .then(async (ran) => {
+        if (ran) await runAutoOpen();
+        return ran;
+      })
       .then(
         (ran): PrSweepResponse =>
           ran
@@ -146,6 +163,7 @@ export default defineBackground(() => {
     }
 
     if (!changeInfo.url) return;
+    void handleTrackedTabNavigated(tabId, changeInfo.url);
     if (isRestrictedUrl(changeInfo.url)) return;
 
     const existing = pendingTimers.get(tabId);
@@ -158,7 +176,7 @@ export default defineBackground(() => {
     pendingTimers.set(tabId, timer);
   });
 
-  chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     const t = pendingTimers.get(tabId);
     if (t) {
       clearTimeout(t);
@@ -166,6 +184,7 @@ export default defineBackground(() => {
     }
     void clearTabFromState(tabId);
     void forgetTab(tabId);
+    void handleTrackedTabRemoved(tabId, removeInfo.isWindowClosing);
   });
 });
 
