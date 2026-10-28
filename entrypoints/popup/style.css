@@ -53,12 +53,34 @@ header strong {
   align-items: center;
 }
 
+.capture {
+  border-bottom: 1px solid #ececf0;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.capture-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.capture-buttons button {
+  flex: 1;
+  background: #f1f1f5;
+  border: 1px solid #d8d8df;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
 .recent-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
 }
 
+.capture h2,
 .recent h2 {
   font-size: 12px;
   text-transform: uppercase;

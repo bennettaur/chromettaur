@@ -25,6 +25,14 @@ import {
   refreshRepoCache,
   REPO_CACHE_ALARM,
 } from "../src/repoCache";
+import {
+  CAPTURE_MESSAGE,
+  capturePage,
+  handleDebuggerEvent,
+  startElementPicker,
+  type CaptureRequest,
+  type CaptureResponse,
+} from "../src/screenshot";
 import { loadSettings } from "../src/settings";
 import { clearTabFromState, pruneStaleTabIds } from "../src/state";
 import {
@@ -138,6 +146,28 @@ export default defineBackground(() => {
     // Keeps the message channel open so sendResponse works after the sweep.
     return true;
   });
+
+  chrome.runtime.onMessage.addListener(
+    (msg: CaptureRequest, _sender, sendResponse) => {
+      if (msg?.type !== CAPTURE_MESSAGE) return false;
+      const run =
+        msg.mode === "page"
+          ? capturePage(msg.tabId)
+          : startElementPicker(msg.tabId);
+      run
+        .then(
+          (): CaptureResponse => ({ ok: true }),
+          (err: unknown): CaptureResponse => ({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        )
+        .then(sendResponse);
+      return true;
+    },
+  );
+
+  chrome.debugger.onEvent.addListener(handleDebuggerEvent);
 
   chrome.tabs.onActivated.addListener(({ tabId }) => {
     void recordTabViewed(tabId);

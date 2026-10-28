@@ -1,3 +1,9 @@
+import {
+  CAPTURE_MESSAGE,
+  type CaptureMode,
+  type CaptureRequest,
+  type CaptureResponse,
+} from "../../src/screenshot";
 import { loadSettings, saveSettings } from "../../src/settings";
 import { clearRecentlyClosed, loadState, updateState } from "../../src/state";
 import type { RecentlyClosedEntry } from "../../src/types";
@@ -81,6 +87,31 @@ async function toggle(
   await saveSettings(settings);
 }
 
+async function capture(mode: CaptureMode): Promise<void> {
+  const status = $<HTMLParagraphElement>("capture-status");
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id == null) return;
+  status.textContent = mode === "page" ? "Capturing…" : "";
+  const request: CaptureRequest = {
+    type: CAPTURE_MESSAGE,
+    mode,
+    tabId: tab.id,
+  };
+  const res = (await chrome.runtime.sendMessage(request)) as
+    | CaptureResponse
+    | undefined;
+  if (!res?.ok) {
+    status.textContent = res?.error ?? "Capture failed.";
+    return;
+  }
+  if (mode === "element") {
+    // Gets the popup out of the way so the user can hover the page.
+    window.close();
+    return;
+  }
+  status.textContent = "Saved to Downloads.";
+}
+
 async function bootstrap(): Promise<void> {
   await Promise.all([refreshToggles(), refreshRecent()]);
 
@@ -93,6 +124,9 @@ async function bootstrap(): Promise<void> {
   $<HTMLInputElement>("t-autogroup").addEventListener("change", (e) =>
     toggle("autoGroup", (e.target as HTMLInputElement).checked),
   );
+
+  $("capture-page").addEventListener("click", () => void capture("page"));
+  $("capture-element").addEventListener("click", () => void capture("element"));
 
   $("open-options").addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
