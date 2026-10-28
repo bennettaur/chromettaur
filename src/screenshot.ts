@@ -32,7 +32,14 @@ interface LayoutMetrics {
 }
 
 const PROTOCOL_VERSION = "1.3";
-const CANCEL_BINDING = "__chromettaurCancelPick";
+const CANCEL_BINDING = "__cancelPick";
+// The Escape hook runs in its own world so page scripts can't see or block it.
+const PICKER_WORLD = "chromettaur-picker";
+
+// Tabs showing the hover highlight, and tabs whose element capture is running.
+// An attached debugger keeps the service worker alive, so these survive the pick.
+const pickingTabs = new Set<number>();
+const capturingTabs = new Set<number>();
 
 // Colors match the DevTools element picker.
 const HIGHLIGHT_CONFIG = {
@@ -43,7 +50,7 @@ const HIGHLIGHT_CONFIG = {
   marginColor: { r: 246, g: 178, b: 107, a: 0.66 },
 };
 
-function send<T = unknown>(
+function sendCommand<T = unknown>(
   target: chrome.debugger.Debuggee,
   method: string,
   params?: object,
@@ -51,7 +58,8 @@ function send<T = unknown>(
   return chrome.debugger.sendCommand(target, method, params) as Promise<T>;
 }
 
-async function detach(tabId: number): Promise<void> {
+async function detachFromTab(tabId: number): Promise<void> {
+  pickingTabs.delete(tabId);
   // Already detached when the user cancels from Chrome's debugging infobar.
   await chrome.debugger.detach({ tabId }).catch(() => {});
 }
@@ -66,14 +74,18 @@ async function attachToTab(tabId: number): Promise<chrome.tabs.Tab> {
 }
 
 /** The smallest rectangle around a DOM.getBoxModel quad, in page coordinates. */
-export function quadToClip(quad: number[], pageX: number, pageY: number): Clip {
+export function quadToClip(
+  quad: number[],
+  scrollX: number,
+  scrollY: number,
+): Clip {
   const xs = [quad[0], quad[2], quad[4], quad[6]];
   const ys = [quad[1], quad[3], quad[5], quad[7]];
   const left = Math.min(...xs);
   const top = Math.min(...ys);
   return {
-    x: left + pageX,
-    y: top + pageY,
+    x: left + scrollX,
+    y: top + scrollY,
     width: Math.max(...xs) - left,
     height: Math.max(...ys) - top,
   };
@@ -101,7 +113,7 @@ export function screenshotFilename(
 }
 
 async function captureClip(tabId: number, clip: Clip): Promise<string> {
-  const { data } = await send<{ data: string }>(
+  const { data: pngBase64 } = await sendCommand<{ data: string }>(
     { tabId },
     "Page.captureScreenshot",
     {
@@ -110,17 +122,17 @@ async function captureClip(tabId: number, clip: Clip): Promise<string> {
       clip: { ...clip, scale: 1 },
     },
   );
-  return data;
+  return pngBase64;
 }
 
 async function savePng(
-  data: string,
+  pngBase64: string,
   url: string | undefined,
   mode: CaptureMode,
 ): Promise<void> {
   // Service workers have no URL.createObjectURL, so the PNG goes as a data URL.
   await chrome.downloads.download({
-    url: `data:image/png;base64,${data}`,
+    url: `data:image/png;base64,${pngBase64}`,
     filename: screenshotFilename(url, mode, new Date()),
   });
 }
@@ -129,19 +141,19 @@ async function savePng(
 export async function capturePage(tabId: number): Promise<void> {
   const tab = await attachToTab(tabId);
   try {
-    const { cssContentSize } = await send<LayoutMetrics>(
+    const { cssContentSize } = await sendCommand<LayoutMetrics>(
       { tabId },
       "Page.getLayoutMetrics",
     );
-    const data = await captureClip(tabId, {
+    const pngBase64 = await captureClip(tabId, {
       x: 0,
       y: 0,
       width: Math.ceil(cssContentSize.width),
       height: Math.ceil(cssContentSize.height),
     });
-    await savePng(data, tab.url, "page");
+    await savePng(pngBase64, tab.url, "page");
   } finally {
-    await detach(tabId);
+    await detachFromTab(tabId);
   }
 }
 
@@ -154,22 +166,38 @@ export async function startElementPicker(tabId: number): Promise<void> {
   await attachToTab(tabId);
   const target = { tabId };
   try {
-    await send(target, "DOM.enable");
-    await send(target, "Overlay.enable");
-    await send(target, "Page.enable");
-    await send(target, "Runtime.enable");
-    await send(target, "Runtime.addBinding", { name: CANCEL_BINDING });
-    await send(target, "Runtime.evaluate", {
+    await sendCommand(target, "DOM.enable");
+    await sendCommand(target, "Overlay.enable");
+    await sendCommand(target, "Page.enable");
+    await sendCommand(target, "Runtime.enable");
+    // Inspect mode has no cancel key, so a keydown listener reports Escape
+    // back through a binding.
+    await sendCommand(target, "Runtime.addBinding", {
+      name: CANCEL_BINDING,
+      executionContextName: PICKER_WORLD,
+    });
+    const { frameTree } = await sendCommand<{
+      frameTree: { frame: { id: string } };
+    }>(target, "Page.getFrameTree");
+    const { executionContextId } = await sendCommand<{
+      executionContextId: number;
+    }>(target, "Page.createIsolatedWorld", {
+      frameId: frameTree.frame.id,
+      worldName: PICKER_WORLD,
+    });
+    await sendCommand(target, "Runtime.evaluate", {
+      contextId: executionContextId,
       expression: `document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") ${CANCEL_BINDING}("");
       }, true);`,
     });
-    await send(target, "Overlay.setInspectMode", {
+    await sendCommand(target, "Overlay.setInspectMode", {
       mode: "searchForNode",
       highlightConfig: HIGHLIGHT_CONFIG,
     });
+    pickingTabs.add(tabId);
   } catch (err) {
-    await detach(tabId);
+    await detachFromTab(tabId);
     throw err;
   }
 }
@@ -181,14 +209,14 @@ async function captureElement(
   const target = { tabId };
   try {
     // Off before capturing so the highlight isn't in the image.
-    await send(target, "Overlay.setInspectMode", { mode: "none" });
-    await send(target, "Overlay.hideHighlight");
-    const { model } = await send<{ model: { border: number[] } }>(
+    await sendCommand(target, "Overlay.setInspectMode", { mode: "none" });
+    await sendCommand(target, "Overlay.hideHighlight");
+    const { model } = await sendCommand<{ model: { border: number[] } }>(
       target,
       "DOM.getBoxModel",
       { backendNodeId },
     );
-    const { cssLayoutViewport } = await send<LayoutMetrics>(
+    const { cssLayoutViewport } = await sendCommand<LayoutMetrics>(
       target,
       "Page.getLayoutMetrics",
     );
@@ -197,11 +225,12 @@ async function captureElement(
       cssLayoutViewport.pageX,
       cssLayoutViewport.pageY,
     );
-    const data = await captureClip(tabId, clip);
+    const pngBase64 = await captureClip(tabId, clip);
     const tab = await chrome.tabs.get(tabId);
-    await savePng(data, tab.url, "element");
+    await savePng(pngBase64, tab.url, "element");
   } finally {
-    await detach(tabId);
+    capturingTabs.delete(tabId);
+    await detachFromTab(tabId);
   }
 }
 
@@ -212,22 +241,49 @@ export function handleDebuggerEvent(
   params?: object,
 ): void {
   const tabId = source.tabId;
-  if (tabId == null) return;
+  // Ignores a double click or Escape once the capture has started.
+  if (tabId == null || capturingTabs.has(tabId)) return;
 
   if (method === "Overlay.inspectNodeRequested") {
     const { backendNodeId } = params as { backendNodeId: number };
+    capturingTabs.add(tabId);
+    // The popup is closed by now, so the log is the only place to report this.
     captureElement(tabId, backendNodeId).catch((err: unknown) => {
       console.error("Element capture failed", err);
     });
-  } else if (
-    method === "Runtime.bindingCalled" &&
-    (params as { name: string }).name === CANCEL_BINDING
-  ) {
-    void detach(tabId);
-  } else if (
-    method === "Page.frameNavigated" &&
-    !(params as { frame: { parentId?: string } }).frame.parentId
-  ) {
-    void detach(tabId);
+    return;
   }
+
+  const pressedEscape =
+    method === "Runtime.bindingCalled" &&
+    (params as { name: string }).name === CANCEL_BINDING;
+  const leftPage =
+    method === "Page.frameNavigated" &&
+    !(params as { frame: { parentId?: string } }).frame.parentId;
+  if (pressedEscape || leftPage) void detachFromTab(tabId);
+}
+
+/** Listener for chrome.debugger.onDetach, e.g. Cancel on Chrome's debugging bar. */
+export function handleDebuggerDetach(source: chrome.debugger.Debuggee): void {
+  if (source.tabId == null) return;
+  pickingTabs.delete(source.tabId);
+  capturingTabs.delete(source.tabId);
+}
+
+/** Cancels pickers on tabs the user switched away from. */
+export function cancelPickersExcept(activeTabId: number): void {
+  for (const tabId of pickingTabs) {
+    if (tabId !== activeTabId && !capturingTabs.has(tabId)) {
+      void detachFromTab(tabId);
+    }
+  }
+}
+
+export function isCaptureRequest(msg: unknown): msg is CaptureRequest {
+  const m = msg as Partial<CaptureRequest> | undefined;
+  return (
+    m?.type === CAPTURE_MESSAGE &&
+    (m.mode === "page" || m.mode === "element") &&
+    typeof m.tabId === "number"
+  );
 }

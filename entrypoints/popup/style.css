@@ -74,6 +74,15 @@ header strong {
   font: inherit;
 }
 
+.capture-status {
+  color: #6c6c75;
+  margin: 4px 0 0;
+}
+
+.capture-status.error {
+  color: #d44d4d;
+}
+
 .recent-header {
   display: flex;
   justify-content: space-between;

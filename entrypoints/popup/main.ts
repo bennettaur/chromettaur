@@ -89,27 +89,41 @@ async function toggle(
 
 async function capture(mode: CaptureMode): Promise<void> {
   const status = $<HTMLParagraphElement>("capture-status");
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id == null) return;
+  const buttons = [
+    $<HTMLButtonElement>("capture-page"),
+    $<HTMLButtonElement>("capture-element"),
+  ];
+  status.classList.remove("error");
+  // Only a full-page capture keeps the popup open long enough to show this.
   status.textContent = mode === "page" ? "Capturing…" : "";
-  const request: CaptureRequest = {
-    type: CAPTURE_MESSAGE,
-    mode,
-    tabId: tab.id,
-  };
-  const res = (await chrome.runtime.sendMessage(request)) as
-    | CaptureResponse
-    | undefined;
-  if (!res?.ok) {
-    status.textContent = res?.error ?? "Capture failed.";
-    return;
+  for (const b of buttons) b.disabled = true;
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (tab?.id == null) throw new Error("No active tab.");
+    const request: CaptureRequest = {
+      type: CAPTURE_MESSAGE,
+      mode,
+      tabId: tab.id,
+    };
+    const response = (await chrome.runtime.sendMessage(request)) as
+      | CaptureResponse
+      | undefined;
+    if (!response?.ok) throw new Error(response?.error ?? "no response");
+    if (mode === "element") {
+      // Gets the popup out of the way so the user can hover the page.
+      window.close();
+      return;
+    }
+    status.textContent = "Saved to Downloads.";
+  } catch (err) {
+    status.textContent = `Capture failed: ${err instanceof Error ? err.message : String(err)}`;
+    status.classList.add("error");
+  } finally {
+    for (const b of buttons) b.disabled = false;
   }
-  if (mode === "element") {
-    // Gets the popup out of the way so the user can hover the page.
-    window.close();
-    return;
-  }
-  status.textContent = "Saved to Downloads.";
 }
 
 async function bootstrap(): Promise<void> {

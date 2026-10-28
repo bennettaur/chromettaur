@@ -26,7 +26,9 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
 7. **Screenshots** — from the popup, **Full page** saves the whole document
    as a PNG, including what's scrolled out of view. **Pick element**
    highlights elements as you hover; click one to save just that element, or
-   press Escape to cancel. Files go to your Downloads folder.
+   press Escape or switch tabs to cancel. Files go to your Downloads folder.
+   Elements inside cross-site iframes can't be picked, and very tall pages
+   (roughly 16,000px and up) may come out blank or cut off.
 
 The extension is loaded **unpacked** for personal use; there is no Web Store
 distribution, no content scripts, and no host permissions. PR status grouping
@@ -171,7 +173,7 @@ in `chrome.storage.local` (never synced).
 
 ### A note on network access
 
-Features 1–3 and recent tabs make no external network calls. **PR status
+Features 1–3, recent tabs and screenshots make no external network calls. **PR status
 grouping and the repo switcher talk to `https://api.github.com/`** to read PR
 metadata and repo lists. PR status grouping is opt-in; the repo switcher
 fetches its default owners as soon as the extension is installed. Neither
@@ -274,8 +276,10 @@ These should all pass on Chrome 149 after a fresh build and load.
       parts below the fold.
 - [ ] **Pick element** closes the popup and highlights elements under the
       cursor; clicking one saves a PNG of just that element.
-- [ ] Escape, navigating away, or **Cancel** on Chrome's debugging bar ends
-      the picker without saving.
+- [ ] Escape, switching tabs, navigating away, or **Cancel** on Chrome's
+      debugging bar ends the picker without saving.
+- [ ] At 125% browser zoom, a picked element's PNG still lines up with the
+      element.
 - [ ] On a `chrome://` page, both buttons show an error in the popup.
 
 ### General / lifecycle

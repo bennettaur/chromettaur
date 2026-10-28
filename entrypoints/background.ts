@@ -26,11 +26,12 @@ import {
   REPO_CACHE_ALARM,
 } from "../src/repoCache";
 import {
-  CAPTURE_MESSAGE,
+  cancelPickersExcept,
   capturePage,
+  handleDebuggerDetach,
   handleDebuggerEvent,
+  isCaptureRequest,
   startElementPicker,
-  type CaptureRequest,
   type CaptureResponse,
 } from "../src/screenshot";
 import { loadSettings } from "../src/settings";
@@ -147,30 +148,31 @@ export default defineBackground(() => {
     return true;
   });
 
-  chrome.runtime.onMessage.addListener(
-    (msg: CaptureRequest, _sender, sendResponse) => {
-      if (msg?.type !== CAPTURE_MESSAGE) return false;
-      const run =
-        msg.mode === "page"
-          ? capturePage(msg.tabId)
-          : startElementPicker(msg.tabId);
-      run
-        .then(
-          (): CaptureResponse => ({ ok: true }),
-          (err: unknown): CaptureResponse => ({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        )
-        .then(sendResponse);
-      return true;
-    },
-  );
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (!isCaptureRequest(msg)) return false;
+    const capture =
+      msg.mode === "page"
+        ? capturePage(msg.tabId)
+        : startElementPicker(msg.tabId);
+    capture
+      .then(
+        (): CaptureResponse => ({ ok: true }),
+        (err: unknown): CaptureResponse => ({
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
+      .then(sendResponse);
+    // Keeps the message channel open so sendResponse works after the capture.
+    return true;
+  });
 
   chrome.debugger.onEvent.addListener(handleDebuggerEvent);
+  chrome.debugger.onDetach.addListener(handleDebuggerDetach);
 
   chrome.tabs.onActivated.addListener(({ tabId }) => {
     void recordTabViewed(tabId);
+    cancelPickersExcept(tabId);
   });
 
   // tabs.onActivated doesn't fire on a window switch, since each window's
