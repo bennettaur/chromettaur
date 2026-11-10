@@ -56,13 +56,14 @@ export function validateHeaderRule(rule: HeaderRule): string | null {
   if (!HEADER_RULE_SCHEMES.has(parsed.scheme.toLowerCase())) {
     return `Match pattern for header "${label}" must start with https:// or http://.`;
   }
-  // Chrome only accepts `*` as the whole host or a leading `*.`. Anything
-  // else, like `example.*`, would also match hosts the user doesn't own.
-  const hostRest = parsed.host.startsWith("*.")
-    ? parsed.host.slice(2)
-    : parsed.host;
-  if (parsed.host !== "*" && hostRest.includes("*")) {
-    return `Match pattern for header "${label}" can only use * as the whole host or at the start, as in *.example.com.`;
+  if (parsed.host === "*") {
+    return `Match pattern for header "${label}" must name a host. * would send the header to every site.`;
+  }
+  // A plain host, optionally with a leading `*.` and a port. This rejects a
+  // `*` anywhere else (e.g. `example.*`) and userinfo like `a.com@b.com`,
+  // both of which would match hosts the user doesn't own.
+  if (!/^(\*\.)?[a-z0-9.-]+(:\d+)?$/i.test(parsed.host)) {
+    return `Match pattern for header "${label}" has an invalid host. Use a name like internal.example.com or *.example.com.`;
   }
   // declarativeNetRequest only accepts ASCII in a rule's URL regex.
   if (!/^[\x20-\x7e]*$/.test(rule.matchPattern)) {
@@ -93,7 +94,36 @@ export function validateHeaderRule(rule: HeaderRule): string | null {
  */
 export function hostPermissionFor(matchPattern: string): string | null {
   const parsed = parsePattern(matchPattern);
-  return parsed ? `${parsed.scheme}://${parsed.host}/*` : null;
+  if (!parsed) return null;
+  return `${parsed.scheme.toLowerCase()}://${parsed.host.toLowerCase()}/*`;
+}
+
+/**
+ * The pattern with its scheme and host lowercased, since Chrome sees URLs
+ * that way and the rule's URL regex is case-sensitive.
+ */
+function normalizedPattern(matchPattern: string): string {
+  const parsed = parsePattern(matchPattern);
+  if (!parsed) return matchPattern;
+  return `${parsed.scheme.toLowerCase()}://${parsed.host.toLowerCase()}${parsed.path}`;
+}
+
+/**
+ * True when access to origin `broad` includes origin `narrow`, so removing
+ * `broad` would also take `narrow` away. Both come from `hostPermissionFor`.
+ */
+function originCovers(broad: string, narrow: string): boolean {
+  const b = parsePattern(broad);
+  const n = parsePattern(narrow);
+  if (!b || !n || b.scheme !== n.scheme) return false;
+  const [broadHost, broadPort] = b.host.split(":");
+  const [narrowHost, narrowPort] = n.host.split(":");
+  // A host with no port covers every port.
+  if (broadPort !== undefined && broadPort !== narrowPort) return false;
+  if (!broadHost.startsWith("*.")) return broadHost === narrowHost;
+  const base = broadHost.slice(2);
+  const target = narrowHost.replace(/^\*\./, "");
+  return target === base || target.endsWith(`.${base}`);
 }
 
 /** The distinct host permissions the enabled rules need. */
@@ -162,7 +192,9 @@ export function buildDnrRules(
   const out: chrome.declarativeNetRequest.Rule[] = [];
   for (const rule of rules) {
     if (!rule.enabled) continue;
-    const regexFilter = patternRegexSource(rule.matchPattern);
+    const regexFilter = patternRegexSource(
+      normalizedPattern(rule.matchPattern),
+    );
     // Unreachable for validated rules; guards against hand-edited storage.
     if (regexFilter === null) continue;
     const requestHeader: chrome.declarativeNetRequest.ModifyHeaderInfo = {
@@ -228,7 +260,9 @@ export async function saveHeaderRulesWithAccess(
     await saveHeaderRules(rules);
     // Only origins this feature asked for before, so nothing granted for
     // another reason is taken away.
-    const unused = originsNeeded(previous).filter((o) => !needed.includes(o));
+    const unused = originsNeeded(previous).filter(
+      (o) => !needed.some((n) => originCovers(o, n)),
+    );
     if (unused.length > 0) {
       // The rules are already saved; leftover access isn't worth failing for.
       await chrome.permissions.remove({ origins: unused }).catch(() => {});

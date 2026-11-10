@@ -54,21 +54,22 @@ describe("validateHeaderRule", () => {
     "https://internal.*.com/*",
     "https://*internal.example.com/*",
     "https://*.example.*/*",
-  ])("rejects a * inside the host: %s", (matchPattern) => {
-    expect(validateHeaderRule(rule({ matchPattern }))).toMatch(
-      /only use \* as the whole host/,
-    );
+    "https://internal.example.com@evil.test/*",
+  ])("rejects a host the user might not own: %s", (matchPattern) => {
+    expect(validateHeaderRule(rule({ matchPattern }))).toMatch(/invalid host/);
   });
 
-  it("accepts * as the whole host", () => {
-    expect(
-      validateHeaderRule(rule({ matchPattern: "https://*/*" })),
-    ).toBeNull();
+  it("rejects * as the whole host", () => {
+    expect(validateHeaderRule(rule({ matchPattern: "https://*/*" }))).toMatch(
+      /every site/,
+    );
   });
 
   it("rejects a non-ASCII match pattern", () => {
     expect(
-      validateHeaderRule(rule({ matchPattern: "https://bücher.de/*" })),
+      validateHeaderRule(
+        rule({ matchPattern: "https://example.com/bücher/*" }),
+      ),
     ).toMatch(/ASCII/);
   });
 
@@ -111,6 +112,12 @@ describe("hostPermissionFor", () => {
     );
     expect(hostPermissionFor("http://localhost:8080/")).toBe(
       "http://localhost:8080/*",
+    );
+  });
+
+  it("lowercases the scheme and host, as Chrome stores them", () => {
+    expect(hostPermissionFor("HTTPS://Internal.Example.com/API/*")).toBe(
+      "https://internal.example.com/*",
     );
   });
 
@@ -174,6 +181,14 @@ describe("buildDnrRules", () => {
     ]);
   });
 
+  it("matches a host typed in capitals", () => {
+    const [built] = buildDnrRules([
+      rule({ matchPattern: "https://Internal.Example.com/*" }),
+    ]);
+    const re = new RegExp(built.condition.regexFilter ?? "");
+    expect(re.test("https://internal.example.com/x")).toBe(true);
+  });
+
   it("matches paths case-sensitively, like the rest of the extension", () => {
     const [built] = buildDnrRules([rule()]);
     expect(built.condition.isUrlFilterCaseSensitive).toBe(true);
@@ -183,7 +198,6 @@ describe("buildDnrRules", () => {
     "https://*.internal.example.com/*",
     "https://internal.example.com/api/*",
     "http://localhost:8080/*",
-    "https://*/*",
     "https://example.com/",
   ];
   const urls = [
@@ -375,4 +389,21 @@ describe("header rule storage", () => {
     expect(await loadHeaderRules()).toEqual([rule()]);
     expect(storage.sync.data).toEqual({});
   });
+
+  it.each([
+    ["https://*.example.com/*", "https://app.example.com/*"],
+    ["https://*.example.com/*", "https://app.example.com:8443/*"],
+    ["https://Internal.example.com/*", "https://internal.example.com/*"],
+  ])(
+    "keeps access to %s when the new rule %s still relies on it",
+    async (before, after) => {
+      const chromeFake = installChromeFake();
+      await saveHeaderRulesWithAccess([rule({ matchPattern: before })]);
+      const kept = [...chromeFake.granted];
+
+      await saveHeaderRulesWithAccess([rule({ matchPattern: after })]);
+
+      expect([...chromeFake.granted]).toEqual(expect.arrayContaining(kept));
+    },
+  );
 });

@@ -145,9 +145,8 @@ toolbar icon → **Options**. Each feature has its own section:
   Chrome for access to each enabled rule's whole site (e.g. a rule for
   `https://*.example.com/api/*` asks for `https://*.example.com/*`). If you
   decline, nothing on the page is saved. Patterns must use `https://` or
-  `http://`, and `*` can only be the whole host or a leading `*.`. A
-  `https://*/*` pattern asks for access to every https site, so prefer a
-  specific host. Chrome only allows `append` on a fixed list of headers
+  `http://` and name a host. The only wildcard allowed in the host is a
+  leading `*.`, as in `*.example.com`. Chrome only allows `append` on a fixed list of headers
   (`cookie`, `accept`, `user-agent` and a few others).
 - Header rules follow the same rules as `SameSite=Lax` cookies, so another
   site can't make requests that carry your token. A page load by GET (typed
@@ -302,6 +301,9 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] From a page on another site (e.g. `https://example.com`), run
       `fetch("https://httpbin.org/headers").then(r => r.json()).then(console.log)`
       in DevTools → the response does **not** list `X-Test`.
+- [ ] Repeat that fetch from inside a sandboxed iframe on the other site
+      (`<iframe sandbox="allow-scripts" srcdoc="...">`) → still no `X-Test`.
+      Chrome should treat the iframe's opaque origin as cross-site.
 - [ ] Untick the rule and save → the header is gone on reload.
 - [ ] Decline the access prompt → the options page reports that nothing
       was saved.
