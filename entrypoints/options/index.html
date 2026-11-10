@@ -313,6 +313,13 @@
           <code>https://</code> or <code>http://</code>.
         </p>
         <p class="hint">
+          Like a <code>SameSite=Lax</code> cookie, the header goes on page
+          loads by GET from anywhere, but on API calls and other requests only
+          when the page making them is on the same domain (e.g.
+          <code>app.example.com</code> calling <code>api.example.com</code>).
+          Other sites can't make requests that carry it.
+        </p>
+        <p class="hint">
           Rules and their values are stored locally
           (<code>chrome.storage.local</code>). They are never synced and never
           included in an export. Chrome only allows <code>append</code> on a

@@ -149,6 +149,13 @@ toolbar icon → **Options**. Each feature has its own section:
   `https://*/*` pattern asks for access to every https site, so prefer a
   specific host. Chrome only allows `append` on a fixed list of headers
   (`cookie`, `accept`, `user-agent` and a few others).
+- Header rules follow the same rules as `SameSite=Lax` cookies, so another
+  site can't make requests that carry your token. A page load by GET (typed
+  URL, bookmark, or a link from anywhere) gets the header. Everything else
+  (API calls, scripts, images, form posts) only gets it when the page making
+  the request is on the same registrable domain, e.g. `app.example.com`
+  calling `api.example.com`. An app on a different domain calling the API
+  won't send the header.
 
 Both shortcuts can be changed at `chrome://extensions/shortcuts`. Chrome only
 applies a suggested shortcut if nothing else already uses it, so check that
@@ -292,6 +299,9 @@ These should all pass on Chrome 149 after a fresh build and load.
       save, and accept Chrome's access prompt for `https://httpbin.org/*`.
 - [ ] Open `https://httpbin.org/headers` → the response lists
       `X-Test: hello`.
+- [ ] From a page on another site (e.g. `https://example.com`), run
+      `fetch("https://httpbin.org/headers").then(r => r.json()).then(console.log)`
+      in DevTools → the response does **not** list `X-Test`.
 - [ ] Untick the rule and save → the header is gone on reload.
 - [ ] Decline the access prompt → the options page reports that nothing
       was saved.

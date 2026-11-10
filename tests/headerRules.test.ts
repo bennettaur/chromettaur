@@ -138,17 +138,33 @@ describe("buildDnrRules", () => {
       rule({ id: "b" }),
       rule({ id: "c", header: "X-Team" }),
     ]);
-    expect(built.map((r) => r.id)).toEqual([1, 2]);
-    expect(built.map((r) => r.action.requestHeaders?.[0].header)).toEqual([
-      "authorization",
-      "x-team",
-    ]);
+    expect(built.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(
+      new Set(built.map((r) => r.action.requestHeaders?.[0].header)),
+    ).toEqual(new Set(["authorization", "x-team"]));
   });
 
-  it("applies to page loads as well as subresources", () => {
-    const [built] = buildDnrRules([rule()]);
-    expect(built.condition.resourceTypes).toContain("main_frame");
-    expect(built.condition.resourceTypes).toContain("xmlhttprequest");
+  it("sends the header on page loads by GET from any site", () => {
+    const conditions = buildDnrRules([rule()]).map((r) => r.condition);
+    expect(conditions).toContainEqual(
+      expect.objectContaining({
+        resourceTypes: ["main_frame"],
+        requestMethods: ["get", "head"],
+      }),
+    );
+    const anySite = conditions.filter((c) => c.domainType === undefined);
+    expect(anySite).toHaveLength(1);
+  });
+
+  it("only sends the header on other requests from the same site", () => {
+    const conditions = buildDnrRules([rule()]).map((r) => r.condition);
+    const sameSite = conditions.filter((c) => c.domainType === "firstParty");
+    expect(sameSite.flatMap((c) => c.resourceTypes)).toEqual(
+      expect.arrayContaining(["main_frame", "xmlhttprequest", "sub_frame"]),
+    );
+    expect(
+      sameSite.find((c) => c.resourceTypes?.some((t) => t === "main_frame")),
+    ).toMatchObject({ excludedRequestMethods: ["get", "head"] });
   });
 
   it("leaves the value off remove rules", () => {
@@ -263,8 +279,12 @@ describe("applyHeaderRules", () => {
     await applyHeaderRules([rule({ header: "X-Other" })]);
 
     expect(
-      chromeFake.dynamicRules().map((r) => r.action.requestHeaders?.[0].header),
-    ).toEqual(["x-other"]);
+      new Set(
+        chromeFake
+          .dynamicRules()
+          .map((r) => r.action.requestHeaders?.[0].header),
+      ),
+    ).toEqual(new Set(["x-other"]));
   });
 
   it("clears every rule when none are enabled", async () => {
@@ -288,7 +308,7 @@ describe("saveHeaderRulesWithAccess", () => {
     expect(await saveHeaderRulesWithAccess(rules)).toBeNull();
 
     expect(chromeFake.prompts).toEqual([["https://a.example.com/*"]]);
-    expect(chromeFake.dynamicRules()).toHaveLength(2);
+    expect(chromeFake.dynamicRules()).toEqual(buildDnrRules(rules));
     expect(await loadHeaderRules()).toEqual(rules);
   });
 

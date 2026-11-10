@@ -107,11 +107,13 @@ export function originsNeeded(rules: HeaderRule[]): string[] {
   return [...origins];
 }
 
-// Leaving resourceTypes out skips main_frame, so the header would be missing
-// from the page load itself. websocket is left out because the http(s) URL
-// regex can never match a ws:// or wss:// URL.
-const ALL_RESOURCE_TYPES = [
-  "main_frame",
+type ResourceType = chrome.declarativeNetRequest.ResourceType;
+type RequestMethod = chrome.declarativeNetRequest.RequestMethod;
+
+// Every type except main_frame, which gets its own conditions below.
+// websocket is left out because the http(s) URL regex can never match a
+// ws:// or wss:// URL.
+const SUBRESOURCE_TYPES = [
   "sub_frame",
   "stylesheet",
   "script",
@@ -123,7 +125,35 @@ const ALL_RESOURCE_TYPES = [
   "csp_report",
   "media",
   "other",
-] as chrome.declarativeNetRequest.ResourceType[];
+] as ResourceType[];
+
+const SAFE_METHODS = ["get", "head"] as RequestMethod[];
+const FIRST_PARTY = "firstParty" as chrome.declarativeNetRequest.DomainType;
+
+/**
+ * The conditions a header is sent under, modeled on SameSite=Lax cookies so
+ * other sites can't make requests that carry the header:
+ * - page loads by GET or HEAD from anywhere, so typed URLs, bookmarks and
+ *   links from other sites work;
+ * - any other page load, and every subresource, only when started by a page
+ *   on the same registrable domain (e.g. app.example.com to api.example.com).
+ * The three never overlap, so an "append" header is only added once.
+ */
+const CONDITIONS: Omit<
+  chrome.declarativeNetRequest.RuleCondition,
+  "regexFilter"
+>[] = [
+  {
+    resourceTypes: ["main_frame" as ResourceType],
+    requestMethods: SAFE_METHODS,
+  },
+  {
+    resourceTypes: ["main_frame" as ResourceType],
+    excludedRequestMethods: SAFE_METHODS,
+    domainType: FIRST_PARTY,
+  },
+  { resourceTypes: SUBRESOURCE_TYPES, domainType: FIRST_PARTY },
+];
 
 /** Turns the enabled rules into declarativeNetRequest dynamic rules. */
 export function buildDnrRules(
@@ -135,29 +165,28 @@ export function buildDnrRules(
     const regexFilter = patternRegexSource(rule.matchPattern);
     // Unreachable for validated rules; guards against hand-edited storage.
     if (regexFilter === null) continue;
-    const operation =
-      rule.operation as chrome.declarativeNetRequest.HeaderOperation;
-    out.push({
-      // Dynamic rule IDs must be positive integers.
-      id: out.length + 1,
-      priority: 1,
-      action: {
-        type: "modifyHeaders" as chrome.declarativeNetRequest.RuleActionType,
-        requestHeaders: [
-          {
-            header: rule.header.trim().toLowerCase(),
-            operation,
-            ...(rule.operation === "remove" ? {} : { value: rule.value }),
-          },
-        ],
-      },
-      condition: {
-        regexFilter,
-        // Match paths the same way `matches` does elsewhere in the extension.
-        isUrlFilterCaseSensitive: true,
-        resourceTypes: ALL_RESOURCE_TYPES,
-      },
-    });
+    const requestHeader: chrome.declarativeNetRequest.ModifyHeaderInfo = {
+      header: rule.header.trim().toLowerCase(),
+      operation: rule.operation as chrome.declarativeNetRequest.HeaderOperation,
+      ...(rule.operation === "remove" ? {} : { value: rule.value }),
+    };
+    for (const condition of CONDITIONS) {
+      out.push({
+        // Dynamic rule IDs must be positive integers.
+        id: out.length + 1,
+        priority: 1,
+        action: {
+          type: "modifyHeaders" as chrome.declarativeNetRequest.RuleActionType,
+          requestHeaders: [requestHeader],
+        },
+        condition: {
+          ...condition,
+          regexFilter,
+          // Match paths the same way `matches` does elsewhere in the extension.
+          isUrlFilterCaseSensitive: true,
+        },
+      });
+    }
   }
   return out;
 }
