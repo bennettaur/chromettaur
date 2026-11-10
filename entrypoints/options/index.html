@@ -13,7 +13,7 @@
         <h1>Chromettaur</h1>
         <p class="subtitle">
           Auto-close inactive tabs · dedupe configured URLs · auto-group by URL
-          · jump to GitHub repos and recent tabs
+          · jump to GitHub repos and recent tabs · add custom request headers
         </p>
         <div id="save-status" class="save-status" aria-live="polite"></div>
       </header>
@@ -298,6 +298,42 @@
             Refresh repo list now
           </button>
           <span id="rs-status" class="hint" style="margin-left: 8px"></span>
+        </div>
+      </section>
+
+      <section id="section-headers">
+        <h2>Custom request headers</h2>
+        <p class="hint">
+          Adds, appends to, or removes a request header on every request whose
+          URL matches the rule's pattern, including page loads, scripts and
+          API calls. Use it to send an auth header or API key to an internal
+          tool. When you save, Chrome asks for access to each enabled rule's
+          site. Chromettaur only changes headers on sites you've granted.
+        </p>
+        <p class="hint">
+          Rules and their values are stored locally
+          (<code>chrome.storage.local</code>). They are never synced and never
+          included in an export. Chrome only allows <code>append</code> on a
+          short list of headers such as <code>cookie</code> and
+          <code>accept</code>; use <code>set</code> for anything else.
+        </p>
+
+        <div class="list-block">
+          <h3>Rules</h3>
+          <table id="hd-table" class="rules-table">
+            <thead>
+              <tr>
+                <th>On</th>
+                <th>Match pattern</th>
+                <th>Header</th>
+                <th>Operation</th>
+                <th>Value</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <button type="button" data-action="add-hd">+ Add rule</button>
         </div>
       </section>
 

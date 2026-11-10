@@ -23,10 +23,15 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
 6. **Recent tabs** — **Alt+Shift+H** lists open tabs in the order you last
    viewed them, across windows. Enter jumps to the selected tab; the tab you
    were on before the current one is selected by default.
+7. **Custom request headers** — set, append to, or remove a request header on
+   every request to URLs matching a pattern. Meant for sending an auth header
+   or API key to internal tools.
 
 The extension is loaded **unpacked** for personal use; there is no Web Store
-distribution, no content scripts, and no host permissions. PR status grouping
-and the repo switcher call the GitHub API (see *A note on network access*).
+distribution and no content scripts. It holds no host permissions until you
+save a custom header rule, which asks for access to that rule's site only.
+PR status grouping and the repo switcher call the GitHub API (see *A note on
+network access*).
 
 ---
 
@@ -134,6 +139,12 @@ toolbar icon → **Options**. Each feature has its own section:
   their `PR: *` group, while PR tabs you grouped by hand stay put.
 - **Keyboard shortcuts** — the GitHub owners the repo switcher lists, and a
   button to refresh the cached repo list.
+- **Custom request headers** — rules with an on/off toggle, URL match pattern,
+  header name, operation (`set`, `append`, `remove`) and value. Saving asks
+  Chrome for access to each enabled rule's whole site (e.g. a rule for
+  `https://*.example.com/api/*` asks for `https://*.example.com/*`). If you
+  decline, the rules are not saved. Chrome only allows `append` on a fixed
+  list of headers (`cookie`, `accept`, `user-agent` and a few others).
 
 Both shortcuts can be changed at `chrome://extensions/shortcuts`. Chrome only
 applies a suggested shortcut if nothing else already uses it, so check that
@@ -160,7 +171,12 @@ repos under allowlisted owners live in `chrome.storage.local`. Incognito
 visits are not recorded. Recent-tab order lives in `chrome.storage.session`,
 which Chrome clears on restart, so right after a restart the order falls back
 to Chrome's own last-accessed times. The optional GitHub PAT is stored only
-in `chrome.storage.local` (never synced).
+in `chrome.storage.local` (never synced). Custom header rules, including their
+values, are also stored only in `chrome.storage.local` and are never exported.
+
+Header rules are applied with `declarativeNetRequest` and keep working after a
+restart. Removing a site's access at `chrome://extensions` stops its rules
+until you save them again and re-grant access.
 
 ### A note on network access
 
@@ -260,6 +276,17 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] Enter on the first entry jumps back to the previous tab.
 - [ ] Typing filters by title and URL.
 - [ ] Closed tabs disappear from the list.
+
+### Custom request headers
+
+- [ ] Add a rule for `https://httpbin.org/*` that sets `X-Test` to `hello`,
+      save, and accept Chrome's access prompt for `https://httpbin.org/*`.
+- [ ] Open `https://httpbin.org/headers` → the response lists
+      `X-Test: hello`.
+- [ ] Untick the rule and save → the header is gone on reload.
+- [ ] Decline the access prompt → the options page reports the rules were
+      not saved.
+- [ ] Export settings → the file contains no header rules.
 
 ### General / lifecycle
 

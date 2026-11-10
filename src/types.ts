@@ -137,3 +137,17 @@ export interface RuntimeState {
   userOverride: number[];
   recentlyClosed: RecentlyClosedEntry[];
 }
+
+export type HeaderOperation = "set" | "append" | "remove";
+
+export const HEADER_OPERATIONS: HeaderOperation[] = ["set", "append", "remove"];
+
+export interface HeaderRule {
+  id: string;
+  enabled: boolean;
+  matchPattern: string;
+  header: string;
+  operation: HeaderOperation;
+  /** Ignored when `operation` is "remove". */
+  value: string;
+}

@@ -74,6 +74,7 @@ section {
 
 input[type="number"],
 input[type="text"],
+.rules-table input[type="password"],
 select {
   padding: 6px 8px;
   border: 1px solid #c8c8d1;

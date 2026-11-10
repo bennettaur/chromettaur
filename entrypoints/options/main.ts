@@ -20,20 +20,32 @@ import {
   saveGithubPat,
 } from "../../src/githubPat";
 import {
+  applyHeaderRules,
+  hostPermissionFor,
+  loadHeaderRules,
+  saveHeaderRules,
+  validateHeaderRule,
+} from "../../src/headerRules";
+import {
   PR_STATUS_SWEEP_MESSAGE,
   type PrSweepResponse,
 } from "../../src/prstatus";
 import {
   GROUP_COLORS,
+  HEADER_OPERATIONS,
   KEY_STRATEGIES,
   type AutoGroupRule,
   type GroupColor,
+  type HeaderOperation,
+  type HeaderRule,
   type KeyStrategy,
   type Settings,
   type UniquenessRule,
 } from "../../src/types";
 
 let working: Settings = structuredClone(DEFAULT_SETTINGS);
+// Kept apart from `working` because header rules live in local storage.
+let headerRules: HeaderRule[] = [];
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -79,6 +91,8 @@ function render(): void {
 
   // Repo switcher
   renderOwners();
+
+  renderHeaderRules();
 }
 
 function renderAllowlist(): void {
@@ -230,6 +244,56 @@ function renderAutoGroupRules(): void {
   });
 }
 
+function renderHeaderRules(): void {
+  const tbody = document.querySelector<HTMLTableSectionElement>("#hd-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  headerRules.forEach((rule, idx) => {
+    const row = document.createElement("tr");
+
+    const enabledCell = document.createElement("td");
+    const enabled = document.createElement("input");
+    enabled.type = "checkbox";
+    enabled.checked = rule.enabled;
+    enabled.addEventListener("change", () => (rule.enabled = enabled.checked));
+    enabledCell.append(enabled);
+
+    const valueCell = cellInput(
+      rule.value,
+      rule.operation === "remove" ? "(unused for remove)" : "Bearer …",
+      (v) => (rule.value = v),
+      (v) => rule.operation !== "remove" && v === "",
+      rule.operation === "remove",
+    );
+    // Values are often tokens, so keep them off screen.
+    const valueInput = valueCell.querySelector("input");
+    if (valueInput) valueInput.type = "password";
+
+    row.append(
+      enabledCell,
+      cellInput(
+        rule.matchPattern,
+        "https://internal.example.com/*",
+        (v) => (rule.matchPattern = v),
+        (v) => v !== "" && !isValidPattern(v),
+      ),
+      cellInput(rule.header, "Authorization", (v) => (rule.header = v)),
+      cellSelect(rule.operation, HEADER_OPERATIONS, (v) => {
+        rule.operation = v as HeaderOperation;
+        renderHeaderRules();
+      }),
+      valueCell,
+      cellRemove(() => {
+        headerRules.splice(idx, 1);
+        renderHeaderRules();
+      }),
+    );
+
+    tbody.append(row);
+  });
+}
+
 function cellInput(
   value: string,
   placeholder: string,
@@ -363,14 +427,67 @@ function validate(): string | null {
   return null;
 }
 
-async function handleSave(): Promise<void> {
+function validateHeaderRules(): string | null {
+  for (const rule of headerRules) {
+    const err = validateHeaderRule(rule);
+    if (err) return err;
+  }
+  return null;
+}
+
+/**
+ * Asks Chrome for access to each enabled rule's site, then applies and
+ * stores the rules. Returns an error message, or null on success.
+ *
+ * The permission request must run before anything else is awaited, since
+ * Chrome only shows the prompt in response to a click.
+ */
+async function saveHeaderRulesWithAccess(): Promise<string | null> {
+  const origins = [
+    ...new Set(
+      headerRules
+        .filter((r) => r.enabled)
+        .map((r) => hostPermissionFor(r.matchPattern))
+        .filter((o): o is string => o !== null),
+    ),
+  ];
+  try {
+    if (origins.length > 0) {
+      const granted = await chrome.permissions.request({ origins });
+      if (!granted) {
+        return "Site access was not granted, so header rules were not saved.";
+      }
+    }
+    // Applied before storing so storage never holds rules Chrome refused.
+    await applyHeaderRules(headerRules);
+  } catch (err) {
+    return `Header rules were not saved: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  await saveHeaderRules(headerRules);
+  return null;
+}
+
+/**
+ * @param includeHeaderRules false when the click that started the save has
+ *   already been spent (an import), so Chrome can't show a permission prompt.
+ */
+async function handleSave(includeHeaderRules = true): Promise<void> {
   collectFromInputs();
-  const err = validate();
+  const err =
+    validate() ?? (includeHeaderRules ? validateHeaderRules() : null);
   const status = $<HTMLDivElement>("save-status");
   if (err) {
     status.textContent = err;
     status.classList.add("error");
     return;
+  }
+  if (includeHeaderRules) {
+    const headerErr = await saveHeaderRulesWithAccess();
+    if (headerErr) {
+      status.textContent = headerErr;
+      status.classList.add("error");
+      return;
+    }
   }
   working.autoClose.allowlist = working.autoClose.allowlist.filter(
     (p) => p.trim() !== "",
@@ -445,7 +562,7 @@ async function handleImport(file: File): Promise<void> {
   }
   // handleSave reads values back from the form, so render the import first.
   render();
-  await handleSave();
+  await handleSave(false);
 }
 
 async function refreshPatStatus(): Promise<void> {
@@ -513,7 +630,10 @@ function addAutoGroupRule(): void {
 }
 
 async function bootstrap(): Promise<void> {
-  working = await loadSettings();
+  [working, headerRules] = await Promise.all([
+    loadSettings(),
+    loadHeaderRules(),
+  ]);
   render();
   await Promise.all([
     refreshPatStatus(),
@@ -521,7 +641,7 @@ async function bootstrap(): Promise<void> {
     refreshAutoOpenStatus(),
   ]);
 
-  $("save-btn").addEventListener("click", handleSave);
+  $("save-btn").addEventListener("click", () => void handleSave());
   $("reset-btn").addEventListener("click", () => {
     working = structuredClone(DEFAULT_SETTINGS);
     render();
@@ -557,6 +677,17 @@ async function bootstrap(): Promise<void> {
           break;
         case "add-ag":
           addAutoGroupRule();
+          break;
+        case "add-hd":
+          headerRules.push({
+            id: uid(),
+            enabled: true,
+            matchPattern: "https://example.com/*",
+            header: "",
+            operation: "set",
+            value: "",
+          });
+          renderHeaderRules();
           break;
         case "add-owner":
           working.repoSwitcher.owners.push("");
