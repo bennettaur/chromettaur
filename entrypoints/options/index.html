@@ -308,7 +308,9 @@
           URL matches the rule's pattern, including page loads, scripts and
           API calls. Use it to send an auth header or API key to an internal
           tool. When you save, Chrome asks for access to each enabled rule's
-          site. Chromettaur only changes headers on sites you've granted.
+          site. Chromettaur only changes headers on sites you've granted, and
+          gives access back when no rule needs it. Patterns must start with
+          <code>https://</code> or <code>http://</code>.
         </p>
         <p class="hint">
           Rules and their values are stored locally

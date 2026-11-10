@@ -52,11 +52,25 @@ function compilePattern(pattern: string): RegExp {
   return source === null ? /a^/ : new RegExp(source);
 }
 
-/** The regex source `matches` uses for a pattern, or null if it's invalid. */
-export function patternRegexSource(pattern: string): string | null {
+export interface ParsedPattern {
+  scheme: string;
+  host: string;
+  path: string;
+}
+
+/** Splits a match pattern into its parts, or returns null if it's invalid. */
+export function parsePattern(pattern: string): ParsedPattern | null {
   const match = /^([a-z*]+):\/\/([^/]*)(\/.*)?$/i.exec(pattern.trim());
   if (!match) return null;
   const [, scheme, host, path = "/"] = match;
+  return { scheme, host, path };
+}
+
+/** The regex source `matches` uses for a pattern, or null if it's invalid. */
+export function patternRegexSource(pattern: string): string | null {
+  const parsed = parsePattern(pattern);
+  if (!parsed) return null;
+  const { scheme, host, path } = parsed;
 
   let schemeRe: string;
   if (scheme === "*") {

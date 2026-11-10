@@ -28,8 +28,9 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
    or API key to internal tools.
 
 The extension is loaded **unpacked** for personal use; there is no Web Store
-distribution and no content scripts. It holds no host permissions until you
-save a custom header rule, which asks for access to that rule's site only.
+distribution and no content scripts. It holds no host permissions except the
+sites your enabled custom header rules need, which it asks for when you save
+them and gives back when no rule needs them.
 PR status grouping and the repo switcher call the GitHub API (see *A note on
 network access*).
 
@@ -143,8 +144,11 @@ toolbar icon → **Options**. Each feature has its own section:
   header name, operation (`set`, `append`, `remove`) and value. Saving asks
   Chrome for access to each enabled rule's whole site (e.g. a rule for
   `https://*.example.com/api/*` asks for `https://*.example.com/*`). If you
-  decline, the rules are not saved. Chrome only allows `append` on a fixed
-  list of headers (`cookie`, `accept`, `user-agent` and a few others).
+  decline, nothing on the page is saved. Patterns must use `https://` or
+  `http://`, and `*` can only be the whole host or a leading `*.`. A
+  `https://*/*` pattern asks for access to every https site, so prefer a
+  specific host. Chrome only allows `append` on a fixed list of headers
+  (`cookie`, `accept`, `user-agent` and a few others).
 
 Both shortcuts can be changed at `chrome://extensions/shortcuts`. Chrome only
 applies a suggested shortcut if nothing else already uses it, so check that
@@ -162,7 +166,8 @@ wildcards (e.g. `https://github.com/*/*/pull/*`, `https://*.atlassian.net/*`).
 
 **Export settings** / **Import settings…** in the options footer save and
 load all settings as a JSON file. An import is validated like a manual save
-and saved immediately. The GitHub PAT is never included in an export.
+and saved immediately. The GitHub PAT and custom header rules are never
+included in an export, and an import leaves your header rules as they are.
 
 Settings are stored in `chrome.storage.sync` (so they roam with your Chrome
 profile). Runtime bookkeeping (managed tabs, user overrides, recently-closed
@@ -173,6 +178,8 @@ which Chrome clears on restart, so right after a restart the order falls back
 to Chrome's own last-accessed times. The optional GitHub PAT is stored only
 in `chrome.storage.local` (never synced). Custom header rules, including their
 values, are also stored only in `chrome.storage.local` and are never exported.
+Neither is encrypted on disk: Chrome keeps both in your profile directory as
+plain text.
 
 Header rules are applied with `declarativeNetRequest` and keep working after a
 restart. Removing a site's access at `chrome://extensions` stops its rules
@@ -180,12 +187,14 @@ until you save them again and re-grant access.
 
 ### A note on network access
 
-Features 1–3 and recent tabs make no external network calls. **PR status
+Features 1–3, recent tabs and custom request headers make no external network
+calls. Custom headers only change requests the browser was already making. **PR status
 grouping and the repo switcher talk to `https://api.github.com/`** to read PR
 metadata and repo lists. PR status grouping is opt-in; the repo switcher
 fetches its default owners as soon as the extension is installed. Neither
-needs `host_permissions` (an extension service worker can `fetch()` any
-origin) or content scripts. Disable PR status grouping and remove every repo
+needs host permissions (an extension service worker can `fetch()` any
+origin) or content scripts. The only host access the extension ever holds is
+what custom header rules ask for. Disable PR status grouping and remove every repo
 switcher owner in Options if you don't want the extension making any outbound
 traffic.
 
@@ -284,8 +293,10 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] Open `https://httpbin.org/headers` → the response lists
       `X-Test: hello`.
 - [ ] Untick the rule and save → the header is gone on reload.
-- [ ] Decline the access prompt → the options page reports the rules were
-      not saved.
+- [ ] Decline the access prompt → the options page reports that nothing
+      was saved.
+- [ ] Delete the rule and save → `https://httpbin.org/*` no longer appears
+      under the extension's site access at `chrome://extensions`.
 - [ ] Export settings → the file contains no header rules.
 
 ### General / lifecycle

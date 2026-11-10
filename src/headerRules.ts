@@ -1,14 +1,14 @@
-import { isValidPattern, patternRegexSource } from "./matcher";
+import { parsePattern, patternRegexSource } from "./matcher";
 import type { HeaderRule } from "./types";
-
-const HEADER_RULES_KEY = "headerRules";
 
 // Header values often carry auth tokens, so the rules live in
 // `chrome.storage.local` like the GitHub PAT: never synced, never exported.
+const HEADER_RULES_KEY = "headerRules";
+
 export async function loadHeaderRules(): Promise<HeaderRule[]> {
-  const r = await chrome.storage.local.get(HEADER_RULES_KEY);
-  const v = r[HEADER_RULES_KEY];
-  return Array.isArray(v) ? (v as HeaderRule[]) : [];
+  const stored = await chrome.storage.local.get(HEADER_RULES_KEY);
+  const rules = stored[HEADER_RULES_KEY];
+  return Array.isArray(rules) ? (rules as HeaderRule[]) : [];
 }
 
 export async function saveHeaderRules(rules: HeaderRule[]): Promise<void> {
@@ -44,12 +44,27 @@ const APPENDABLE_HEADERS = new Set([
 // RFC 9110 token characters.
 const HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
+// Only http and https: the extension's optional host permission covers no
+// other scheme, so Chrome would refuse the access request.
+const HEADER_RULE_SCHEMES = new Set(["http", "https"]);
+
 /** A user-facing error for the first problem with `rule`, or null. */
 export function validateHeaderRule(rule: HeaderRule): string | null {
   const label = rule.header.trim() || "(unnamed header)";
-  if (!isValidPattern(rule.matchPattern)) {
-    return `Invalid match pattern for header "${label}".`;
+  const parsed = parsePattern(rule.matchPattern);
+  if (!parsed) return `Invalid match pattern for header "${label}".`;
+  if (!HEADER_RULE_SCHEMES.has(parsed.scheme.toLowerCase())) {
+    return `Match pattern for header "${label}" must start with https:// or http://.`;
   }
+  // Chrome only accepts `*` as the whole host or a leading `*.`. Anything
+  // else, like `example.*`, would also match hosts the user doesn't own.
+  const hostRest = parsed.host.startsWith("*.")
+    ? parsed.host.slice(2)
+    : parsed.host;
+  if (parsed.host !== "*" && hostRest.includes("*")) {
+    return `Match pattern for header "${label}" can only use * as the whole host or at the start, as in *.example.com.`;
+  }
+  // declarativeNetRequest only accepts ASCII in a rule's URL regex.
   if (!/^[\x20-\x7e]*$/.test(rule.matchPattern)) {
     return `Match pattern for header "${label}" must be plain ASCII.`;
   }
@@ -74,16 +89,27 @@ export function validateHeaderRule(rule: HeaderRule): string | null {
 /**
  * The host permission a rule needs, as a Chrome match pattern covering the
  * rule's whole origin (e.g. `https://*.example.com/*`). Null if the pattern
- * is invalid.
+ * can't be parsed.
  */
 export function hostPermissionFor(matchPattern: string): string | null {
-  const m = /^([a-z*]+):\/\/([^/]*)/i.exec(matchPattern.trim());
-  if (!m) return null;
-  return `${m[1]}://${m[2]}/*`;
+  const parsed = parsePattern(matchPattern);
+  return parsed ? `${parsed.scheme}://${parsed.host}/*` : null;
 }
 
-// Listed in full because leaving resourceTypes out skips main_frame, so the
-// header would be missing from the page load itself.
+/** The distinct host permissions the enabled rules need. */
+export function originsNeeded(rules: HeaderRule[]): string[] {
+  const origins = new Set<string>();
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
+    const origin = hostPermissionFor(rule.matchPattern);
+    if (origin) origins.add(origin);
+  }
+  return [...origins];
+}
+
+// Leaving resourceTypes out skips main_frame, so the header would be missing
+// from the page load itself. websocket is left out because the http(s) URL
+// regex can never match a ws:// or wss:// URL.
 const ALL_RESOURCE_TYPES = [
   "main_frame",
   "sub_frame",
@@ -96,7 +122,6 @@ const ALL_RESOURCE_TYPES = [
   "ping",
   "csp_report",
   "media",
-  "websocket",
   "other",
 ] as chrome.declarativeNetRequest.ResourceType[];
 
@@ -108,6 +133,7 @@ export function buildDnrRules(
   for (const rule of rules) {
     if (!rule.enabled) continue;
     const regexFilter = patternRegexSource(rule.matchPattern);
+    // Unreachable for validated rules; guards against hand-edited storage.
     if (regexFilter === null) continue;
     const operation =
       rule.operation as chrome.declarativeNetRequest.HeaderOperation;
@@ -125,7 +151,12 @@ export function buildDnrRules(
           },
         ],
       },
-      condition: { regexFilter, resourceTypes: ALL_RESOURCE_TYPES },
+      condition: {
+        regexFilter,
+        // Match paths the same way `matches` does elsewhere in the extension.
+        isUrlFilterCaseSensitive: true,
+        resourceTypes: ALL_RESOURCE_TYPES,
+      },
     });
   }
   return out;
@@ -143,4 +174,38 @@ export async function applyHeaderRules(rules: HeaderRule[]): Promise<void> {
     removeRuleIds: existing.map((r) => r.id),
     addRules: buildDnrRules(rules),
   });
+}
+
+/**
+ * Asks Chrome for access to each enabled rule's site, applies the rules, then
+ * stores them. Access no rule needs any more is given back. Returns a
+ * user-facing error, or null on success.
+ *
+ * Must be called straight from a click handler with nothing awaited first:
+ * Chrome only shows the permission prompt in response to a user gesture.
+ */
+export async function saveHeaderRulesWithAccess(
+  rules: HeaderRule[],
+): Promise<string | null> {
+  const needed = originsNeeded(rules);
+  try {
+    if (needed.length > 0) {
+      const granted = await chrome.permissions.request({ origins: needed });
+      if (!granted) return "Site access was not granted.";
+    }
+    const previous = await loadHeaderRules();
+    // Applied before storing so storage never holds rules Chrome refused.
+    await applyHeaderRules(rules);
+    await saveHeaderRules(rules);
+    // Only origins this feature asked for before, so nothing granted for
+    // another reason is taken away.
+    const unused = originsNeeded(previous).filter((o) => !needed.includes(o));
+    if (unused.length > 0) {
+      // The rules are already saved; leftover access isn't worth failing for.
+      await chrome.permissions.remove({ origins: unused }).catch(() => {});
+    }
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  return null;
 }
