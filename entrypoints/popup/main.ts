@@ -1,3 +1,9 @@
+import {
+  CAPTURE_MESSAGE,
+  type CaptureMode,
+  type CaptureRequest,
+  type CaptureResponse,
+} from "../../src/screenshot";
 import { loadSettings, saveSettings } from "../../src/settings";
 import { clearRecentlyClosed, loadState, updateState } from "../../src/state";
 import type { RecentlyClosedEntry } from "../../src/types";
@@ -81,6 +87,45 @@ async function toggle(
   await saveSettings(settings);
 }
 
+async function capture(mode: CaptureMode): Promise<void> {
+  const status = $<HTMLParagraphElement>("capture-status");
+  const buttons = [
+    $<HTMLButtonElement>("capture-page"),
+    $<HTMLButtonElement>("capture-element"),
+  ];
+  status.classList.remove("error");
+  // Only a full-page capture keeps the popup open long enough to show this.
+  status.textContent = mode === "page" ? "Capturing…" : "";
+  for (const b of buttons) b.disabled = true;
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (tab?.id == null) throw new Error("No active tab.");
+    const request: CaptureRequest = {
+      type: CAPTURE_MESSAGE,
+      mode,
+      tabId: tab.id,
+    };
+    const response = (await chrome.runtime.sendMessage(request)) as
+      | CaptureResponse
+      | undefined;
+    if (!response?.ok) throw new Error(response?.error ?? "no response");
+    if (mode === "element") {
+      // Gets the popup out of the way so the user can hover the page.
+      window.close();
+      return;
+    }
+    status.textContent = "Saved to Downloads.";
+  } catch (err) {
+    status.textContent = `Capture failed: ${err instanceof Error ? err.message : String(err)}`;
+    status.classList.add("error");
+  } finally {
+    for (const b of buttons) b.disabled = false;
+  }
+}
+
 async function bootstrap(): Promise<void> {
   await Promise.all([refreshToggles(), refreshRecent()]);
 
@@ -93,6 +138,9 @@ async function bootstrap(): Promise<void> {
   $<HTMLInputElement>("t-autogroup").addEventListener("change", (e) =>
     toggle("autoGroup", (e.target as HTMLInputElement).checked),
   );
+
+  $("capture-page").addEventListener("click", () => void capture("page"));
+  $("capture-element").addEventListener("click", () => void capture("element"));
 
   $("open-options").addEventListener("click", () => {
     chrome.runtime.openOptionsPage();

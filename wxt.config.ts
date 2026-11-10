@@ -18,6 +18,8 @@ export default defineConfig({
       "tabGroups",
       "alarms",
       "storage",
+      "debugger",
+      "downloads",
       "declarativeNetRequestWithHostAccess",
     ],
     // Custom request headers ask for access to each rule's site when the

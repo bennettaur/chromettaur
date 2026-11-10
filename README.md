@@ -23,7 +23,13 @@ A Manifest V3 Chrome extension that adds Arc-like tab behaviors to Chrome:
 6. **Recent tabs** — **Alt+Shift+H** lists open tabs in the order you last
    viewed them, across windows. Enter jumps to the selected tab; the tab you
    were on before the current one is selected by default.
-7. **Custom request headers** — set, append to, or remove a request header on
+7. **Screenshots** — from the popup, **Full page** saves the whole document
+   as a PNG, including what's scrolled out of view. **Pick element**
+   highlights elements as you hover; click one to save just that element, or
+   press Escape or switch tabs to cancel. Files go to your Downloads folder.
+   Elements inside cross-site iframes can't be picked, and very tall pages
+   (roughly 16,000px and up) may come out blank or cut off.
+8. **Custom request headers** — set, append to, or remove a request header on
    every request to URLs matching a pattern. Meant for sending an auth header
    or API key to internal tools.
 
@@ -95,10 +101,13 @@ your normal browser permanently:
 5. The extension appears as **Chromettaur**. Pin it to the toolbar for quick popup
    access.
 
-Chrome will prompt with a single permission notice ("Read your browsing
-history") — that is the standard text for the `tabs` permission. The extension
-does **not** read browsing history; it only inspects URLs and titles of open
-tabs.
+Chrome will prompt with a permission notice ("Read your browsing history")
+— that is the standard text for the `tabs` permission. The extension does
+**not** read browsing history; it only inspects URLs and titles of open tabs.
+Screenshots add "Access the page debugger backend" (`debugger`) and "Manage
+your downloads" (`downloads`). The debugger is only attached to a tab while
+a capture or element pick runs, and Chrome shows a "started debugging this
+browser" bar during that time.
 
 > Chrome will prompt you on each launch to keep developer extensions enabled —
 > this is normal for unpacked extensions and cannot be disabled.
@@ -193,7 +202,7 @@ until you save them again and re-grant access.
 
 ### A note on network access
 
-Features 1–3, recent tabs and custom request headers make no external network
+Features 1–3, recent tabs, screenshots, and custom request headers make no external network
 calls. Custom headers only change requests the browser was already making. **PR status
 grouping and the repo switcher talk to `https://api.github.com/`** to read PR
 metadata and repo lists. PR status grouping is opt-in; the repo switcher
@@ -292,6 +301,17 @@ These should all pass on Chrome 149 after a fresh build and load.
 - [ ] Typing filters by title and URL.
 - [ ] Closed tabs disappear from the list.
 
+### Screenshots
+
+- [ ] **Full page** on a long page saves a PNG to Downloads that includes the
+      parts below the fold.
+- [ ] **Pick element** closes the popup and highlights elements under the
+      cursor; clicking one saves a PNG of just that element.
+- [ ] Escape, switching tabs, navigating away, or **Cancel** on Chrome's
+      debugging bar ends the picker without saving.
+- [ ] At 125% browser zoom, a picked element's PNG still lines up with the
+      element.
+- [ ] On a `chrome://` page, both buttons show an error in the popup.
 ### Custom request headers
 
 - [ ] Add a rule for `https://httpbin.org/*` that sets `X-Test` to `hello`,
