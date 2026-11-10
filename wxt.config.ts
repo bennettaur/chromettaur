@@ -11,9 +11,18 @@ export default defineConfig({
   manifest: ({ mode }) => ({
     name: mode === "local-dev" ? "Chromettaur (dev)" : "Chromettaur",
     description:
-      "Auto-close inactive tabs, dedupe configured URLs, auto-group by URL.",
+      "Auto-close inactive tabs, dedupe configured URLs, auto-group by URL, add custom request headers.",
     version: "0.2.0",
-    permissions: ["tabs", "tabGroups", "alarms", "storage"],
+    permissions: [
+      "tabs",
+      "tabGroups",
+      "alarms",
+      "storage",
+      "declarativeNetRequestWithHostAccess",
+    ],
+    // Custom request headers ask for access to each rule's site when the
+    // rule is saved, instead of holding access to every site up front.
+    optional_host_permissions: ["*://*/*"],
     action: {
       default_title: "Chromettaur",
     },

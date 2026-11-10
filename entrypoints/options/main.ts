@@ -20,20 +20,30 @@ import {
   saveGithubPat,
 } from "../../src/githubPat";
 import {
+  loadHeaderRules,
+  saveHeaderRulesWithAccess,
+  validateHeaderRule,
+} from "../../src/headerRules";
+import {
   PR_STATUS_SWEEP_MESSAGE,
   type PrSweepResponse,
 } from "../../src/prstatus";
 import {
   GROUP_COLORS,
+  HEADER_OPERATIONS,
   KEY_STRATEGIES,
   type AutoGroupRule,
   type GroupColor,
+  type HeaderOperation,
+  type HeaderRule,
   type KeyStrategy,
   type Settings,
   type UniquenessRule,
 } from "../../src/types";
 
 let working: Settings = structuredClone(DEFAULT_SETTINGS);
+// Kept apart from `working` because header rules live in local storage.
+let headerRules: HeaderRule[] = [];
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -79,6 +89,8 @@ function render(): void {
 
   // Repo switcher
   renderOwners();
+
+  renderHeaderRules();
 }
 
 function renderAllowlist(): void {
@@ -230,16 +242,69 @@ function renderAutoGroupRules(): void {
   });
 }
 
+function renderHeaderRules(): void {
+  const tbody = document.querySelector<HTMLTableSectionElement>("#hd-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  headerRules.forEach((rule, idx) => {
+    const row = document.createElement("tr");
+
+    const enabledCell = document.createElement("td");
+    const enabledCheckbox = document.createElement("input");
+    enabledCheckbox.type = "checkbox";
+    enabledCheckbox.checked = rule.enabled;
+    enabledCheckbox.addEventListener(
+      "change",
+      () => (rule.enabled = enabledCheckbox.checked),
+    );
+    enabledCell.append(enabledCheckbox);
+
+    row.append(
+      enabledCell,
+      cellInput(
+        rule.matchPattern,
+        "https://internal.example.com/*",
+        (v) => (rule.matchPattern = v),
+        (v) => v !== "" && !isValidPattern(v),
+      ),
+      cellInput(rule.header, "Authorization", (v) => (rule.header = v)),
+      cellSelect(rule.operation, HEADER_OPERATIONS, (v) => {
+        rule.operation = v as HeaderOperation;
+        renderHeaderRules();
+      }),
+      // Password field because values are often tokens.
+      cellInput(
+        rule.value,
+        rule.operation === "remove" ? "(unused for remove)" : "Bearer …",
+        (v) => (rule.value = v),
+        (v) => rule.operation !== "remove" && v === "",
+        rule.operation === "remove",
+        "password",
+      ),
+      cellRemove(() => {
+        headerRules.splice(idx, 1);
+        renderHeaderRules();
+      }),
+    );
+
+    tbody.append(row);
+  });
+}
+
 function cellInput(
   value: string,
   placeholder: string,
   onChange: (v: string) => void,
   invalidWhen?: (v: string) => boolean,
   disabled = false,
+  type: "text" | "password" = "text",
 ): HTMLTableCellElement {
   const td = document.createElement("td");
   const input = document.createElement("input");
-  input.type = "text";
+  input.type = type;
+  // Keeps Chrome's password manager from offering to save or fill tokens.
+  if (type === "password") input.autocomplete = "new-password";
   input.value = value;
   input.placeholder = placeholder;
   input.disabled = disabled;
@@ -363,14 +428,36 @@ function validate(): string | null {
   return null;
 }
 
-async function handleSave(): Promise<void> {
+function validateHeaderRules(): string | null {
+  for (const rule of headerRules) {
+    const err = validateHeaderRule(rule);
+    if (err) return err;
+  }
+  return null;
+}
+
+/**
+ * @param includeHeaderRules false when the click that started the save has
+ *   already been spent (an import), so Chrome can't show a permission prompt.
+ */
+async function handleSave(includeHeaderRules = true): Promise<void> {
   collectFromInputs();
-  const err = validate();
+  const err =
+    validate() ?? (includeHeaderRules ? validateHeaderRules() : null);
   const status = $<HTMLDivElement>("save-status");
   if (err) {
     status.textContent = err;
     status.classList.add("error");
     return;
+  }
+  if (includeHeaderRules) {
+    // First await in the click handler, so Chrome can still show its prompt.
+    const headerErr = await saveHeaderRulesWithAccess(headerRules);
+    if (headerErr) {
+      status.textContent = `Nothing was saved. ${headerErr}`;
+      status.classList.add("error");
+      return;
+    }
   }
   working.autoClose.allowlist = working.autoClose.allowlist.filter(
     (p) => p.trim() !== "",
@@ -445,7 +532,7 @@ async function handleImport(file: File): Promise<void> {
   }
   // handleSave reads values back from the form, so render the import first.
   render();
-  await handleSave();
+  await handleSave(false);
 }
 
 async function refreshPatStatus(): Promise<void> {
@@ -512,8 +599,23 @@ function addAutoGroupRule(): void {
   renderAutoGroupRules();
 }
 
+function addHeaderRule(): void {
+  headerRules.push({
+    id: uid(),
+    enabled: true,
+    matchPattern: "https://example.com/*",
+    header: "",
+    operation: "set",
+    value: "",
+  });
+  renderHeaderRules();
+}
+
 async function bootstrap(): Promise<void> {
-  working = await loadSettings();
+  [working, headerRules] = await Promise.all([
+    loadSettings(),
+    loadHeaderRules(),
+  ]);
   render();
   await Promise.all([
     refreshPatStatus(),
@@ -521,7 +623,7 @@ async function bootstrap(): Promise<void> {
     refreshAutoOpenStatus(),
   ]);
 
-  $("save-btn").addEventListener("click", handleSave);
+  $("save-btn").addEventListener("click", () => void handleSave());
   $("reset-btn").addEventListener("click", () => {
     working = structuredClone(DEFAULT_SETTINGS);
     render();
@@ -557,6 +659,9 @@ async function bootstrap(): Promise<void> {
           break;
         case "add-ag":
           addAutoGroupRule();
+          break;
+        case "add-hd":
+          addHeaderRule();
           break;
         case "add-owner":
           working.repoSwitcher.owners.push("");

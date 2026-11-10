@@ -48,11 +48,29 @@ function escapeRegex(s: string): string {
  * Fragment is ignored — patterns never match the `#...` portion.
  */
 function compilePattern(pattern: string): RegExp {
+  const source = patternRegexSource(pattern);
+  return source === null ? /a^/ : new RegExp(source);
+}
+
+export interface ParsedPattern {
+  scheme: string;
+  host: string;
+  path: string;
+}
+
+/** Splits a match pattern into its parts, or returns null if it's invalid. */
+export function parsePattern(pattern: string): ParsedPattern | null {
   const match = /^([a-z*]+):\/\/([^/]*)(\/.*)?$/i.exec(pattern.trim());
-  if (!match) {
-    return /a^/;
-  }
+  if (!match) return null;
   const [, scheme, host, path = "/"] = match;
+  return { scheme, host, path };
+}
+
+/** The regex source `matches` uses for a pattern, or null if it's invalid. */
+export function patternRegexSource(pattern: string): string | null {
+  const parsed = parsePattern(pattern);
+  if (!parsed) return null;
+  const { scheme, host, path } = parsed;
 
   let schemeRe: string;
   if (scheme === "*") {
@@ -73,7 +91,7 @@ function compilePattern(pattern: string): RegExp {
 
   const pathRe = escapeRegex(path).replace(/\\\*/g, "[^\\n]*");
 
-  return new RegExp(`^${schemeRe}://${hostRe}${pathRe}$`);
+  return `^${schemeRe}://${hostRe}${pathRe}$`;
 }
 
 const patternCache = new Map<string, RegExp>();
